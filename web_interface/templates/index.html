@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <title>Scanner 3D Control Panel</title>
+
+    <style>
+      body {
+        background: #111827;
+        color: white;
+
+        font-family: Arial, sans-serif;
+
+        padding: 30px;
+
+        margin: 0;
+      }
+
+      h1 {
+        color: #38bdf8;
+      }
+
+      .container {
+        display: grid;
+
+        grid-template-columns: 2fr 1fr;
+
+        gap: 25px;
+      }
+
+      .card {
+        background: #1f2937;
+
+        padding: 20px;
+
+        border-radius: 12px;
+
+        box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      img {
+        width: 100%;
+
+        border: 4px solid #38bdf8;
+
+        border-radius: 12px;
+      }
+
+      button {
+        background: #2563eb;
+
+        color: white;
+
+        border: none;
+
+        padding: 12px 18px;
+
+        margin-top: 12px;
+
+        border-radius: 8px;
+
+        cursor: pointer;
+
+        font-size: 15px;
+      }
+
+      button:hover {
+        background: #1d4ed8;
+      }
+
+      .capture {
+        background: #16a34a;
+      }
+
+      .capture:hover {
+        background: #15803d;
+      }
+
+      .danger {
+        background: #dc2626;
+      }
+
+      .danger:hover {
+        background: #b91c1c;
+      }
+
+      .thumbnail {
+        width: 150px;
+
+        margin: 8px;
+
+        border: 2px solid #38bdf8;
+
+        border-radius: 8px;
+      }
+
+      #capturesContainer {
+        display: flex;
+
+        flex-wrap: wrap;
+      }
+
+      #logsContainer {
+        max-height: 250px;
+
+        overflow: auto;
+
+        background: #111827;
+
+        padding: 10px;
+
+        border-radius: 8px;
+      }
+
+      .log {
+        font-size: 14px;
+
+        padding: 4px;
+
+        border-bottom: 1px solid #374151;
+      }
+
+      .disabled-info {
+        background: #111827;
+
+        padding: 12px;
+
+        border-radius: 8px;
+
+        color: #d1d5db;
+
+        line-height: 1.5;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Scanner 3D Control Panel</h1>
+
+    <div class="container">
+      <div class="card">
+        <h2>Live Camera</h2>
+
+        <img src="/video" />
+
+        <button class="capture" onclick="captureImage()">
+          Capture Test Image
+        </button>
+
+        <button class="danger" onclick="clearCaptures()">Clear Captures</button>
+
+        <h3>Captured Images</h3>
+
+        <div id="capturesContainer"></div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h2>Camera Settings</h2>
+
+          <div class="disabled-info">
+            Camera controls disabled on notebook. Final camera tuning will be
+            tested on Raspberry Pi using the real scanner webcam.
+          </div>
+
+          <button onclick="resetCamera()">Reset Camera</button>
+        </div>
+
+        <div class="card" style="margin-top: 25px">
+          <h2>Scanner Controls</h2>
+
+          <button onclick="startScan()">Start Scan</button>
+
+          <button class="danger" onclick="stopScan()">Stop Scan</button>
+
+          <button onclick="generatePly()">Generate PLY</button>
+        </div>
+
+        <div class="card" style="margin-top: 25px">
+          <h2>System Logs</h2>
+
+          <div id="logsContainer"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      async function resetCamera() {
+        const response = await fetch(
+          "/reset-camera",
+
+          {
+            method: "POST",
+          },
+        );
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert("Camera restarted");
+        }
+      }
+
+      async function captureImage() {
+        const response = await fetch(
+          "/capture",
+
+          {
+            method: "POST",
+          },
+        );
+
+        const result = await response.json();
+
+        if (result.success) {
+          const container = document.getElementById("capturesContainer");
+
+          const image = document.createElement("img");
+
+          image.src = "/captures/" + result.file;
+
+          image.className = "thumbnail";
+
+          container.prepend(image);
+        }
+      }
+
+      async function clearCaptures() {
+        const response = await fetch(
+          "/clear-captures",
+
+          {
+            method: "POST",
+          },
+        );
+
+        const result = await response.json();
+
+        if (result.success) {
+          document.getElementById("capturesContainer").innerHTML = "";
+        }
+      }
+
+      async function startScan() {
+        await fetch(
+          "/start-scan",
+
+          {
+            method: "POST",
+          },
+        );
+
+        updateLogs();
+      }
+
+      async function stopScan() {
+        await fetch(
+          "/stop-scan",
+
+          {
+            method: "POST",
+          },
+        );
+
+        updateLogs();
+      }
+
+      async function generatePly() {
+        await fetch(
+          "/generate-ply",
+
+          {
+            method: "POST",
+          },
+        );
+
+        updateLogs();
+      }
+
+      async function updateLogs() {
+        const response = await fetch("/logs");
+
+        const result = await response.json();
+
+        const container = document.getElementById("logsContainer");
+
+        container.innerHTML = "";
+
+        result.logs.forEach((log) => {
+          const line = document.createElement("div");
+
+          line.className = "log";
+
+          line.textContent = log;
+
+          container.appendChild(line);
+        });
+      }
+
+      setInterval(
+        updateLogs,
+
+        2000,
+      );
+
+      updateLogs();
+    </script>
+  </body>
+</html>
