@@ -178,6 +178,12 @@
 
           <button onclick="downloadPly()">Download Last PLY</button>
         </div>
+
+        <div class="card" style="margin-top: 25px">
+          <h2>Generated Point Clouds</h2>
+
+          <div id="pointCloudsContainer"></div>
+        </div>
         <div class="card">
           <h2>Scanner Status</h2>
 
@@ -357,17 +363,46 @@
       function downloadPly() {
         window.location.href = "/download-ply";
       }
+      async function updatePointClouds() {
+        const response = await fetch("/point-clouds");
+        const result = await response.json();
+
+        const container = document.getElementById("pointCloudsContainer");
+
+        container.innerHTML = "";
+
+        result.files.forEach((file) => {
+          const div = document.createElement("div");
+
+          div.style.marginTop = "10px";
+
+          const text = document.createElement("span");
+          text.textContent = file + " ";
+
+          const button = document.createElement("button");
+          button.textContent = "Download";
+
+          button.onclick = () => {
+            window.location.href = "/download-ply/" + file;
+          };
+
+          div.appendChild(text);
+          div.appendChild(button);
+
+          container.appendChild(div);
+        });
+      }
+
       setInterval(() => {
         updateLogs();
-
         updateStatus();
+        updatePointClouds();
       }, 1000);
 
       updateLogs();
-
       updateStatus();
-
-      updateLogs();
+      updatePointClouds();
+      
     </script>
   </body>
 </html>

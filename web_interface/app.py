@@ -180,6 +180,47 @@ def download_ply():
         POINT_CLOUD_FILE,
         as_attachment=True
     )
+@app.route("/point-clouds")
+def list_point_clouds():
+    folder = os.path.abspath(POINT_CLOUD_FOLDER)
+
+    os.makedirs(
+        folder,
+        exist_ok=True
+    )
+
+    files = []
+
+    for filename in os.listdir(folder):
+        if filename.endswith(".ply"):
+            files.append(filename)
+
+    files.sort(reverse=True)
+
+    return jsonify({
+        "files": files
+    })
+
+@app.route("/download-ply/<filename>")
+def download_ply_file(filename):
+    folder = os.path.abspath(POINT_CLOUD_FOLDER)
+
+    filepath = os.path.join(
+        folder,
+        filename
+    )
+
+    if not os.path.exists(filepath):
+        return jsonify({
+            "success": False,
+            "error": "PLY file not found"
+        }), 404
+
+    return send_from_directory(
+        folder,
+        filename,
+        as_attachment=True
+    )
 
 if __name__ == "__main__":
     app.run(
