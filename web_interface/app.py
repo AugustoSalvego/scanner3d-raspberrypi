@@ -19,7 +19,8 @@ from scanner_core.pipeline import execute_scan
 from scanner_core.pipeline import stop
 from scanner_core.point_cloud import generate
 from scanner_core.status import get_status
-
+from scanner_core.config import POINT_CLOUD_FOLDER
+from scanner_core.config import POINT_CLOUD_FILE
 
 app = Flask(__name__)
 
@@ -156,6 +157,29 @@ def status():
         get_status()
     )
 
+@app.route("/download-ply")
+def download_ply():
+    folder = os.path.abspath(POINT_CLOUD_FOLDER)
+
+    filepath = os.path.join(
+        folder,
+        POINT_CLOUD_FILE
+    )
+
+    if not os.path.exists(filepath):
+        add_log("Download failed: PLY file not found")
+
+        return jsonify({
+            "success": False,
+            "error": "PLY file not found. Generate PLY first.",
+            "expected_path": filepath
+        }), 404
+
+    return send_from_directory(
+        folder,
+        POINT_CLOUD_FILE,
+        as_attachment=True
+    )
 
 if __name__ == "__main__":
     app.run(

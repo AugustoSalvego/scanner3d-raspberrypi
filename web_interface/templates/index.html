@@ -175,8 +175,41 @@
           <button class="danger" onclick="stopScan()">Stop Scan</button>
 
           <button onclick="generatePly()">Generate PLY</button>
-        </div>
 
+          <button onclick="downloadPly()">Download Last PLY</button>
+        </div>
+        <div class="card">
+          <h2>Scanner Status</h2>
+
+          <p>
+            Running:
+            <span id="runningStatus"> No </span>
+          </p>
+
+          <p>
+            Frames Captured:
+            <span id="framesCaptured"> 0 </span>
+          </p>
+
+          <p>
+            Motor Position:
+            <span id="motorPosition"> 0 </span>
+          </p>
+
+          <p>
+            Last Capture:
+            <span id="lastCapture"> None </span>
+          </p>
+
+          <p>
+            PLY Generated:
+            <span id="plyStatus"> No </span>
+          </p>
+          <p>
+            Last PLY:
+            <span id="lastPointCloud">None</span>
+          </p>
+        </div>
         <div class="card" style="margin-top: 25px">
           <h2>System Logs</h2>
 
@@ -297,12 +330,42 @@
           container.appendChild(line);
         });
       }
+      async function updateStatus() {
+        const response = await fetch("/status");
 
-      setInterval(
-        updateLogs,
+        const data = await response.json();
 
-        2000,
-      );
+        document.getElementById("runningStatus").textContent = data.running
+          ? "YES"
+          : "NO";
+
+        document.getElementById("framesCaptured").textContent =
+          data.frames_captured;
+
+        document.getElementById("motorPosition").textContent =
+          data.motor_position;
+
+        document.getElementById("lastCapture").textContent =
+          data.last_capture ?? "None";
+
+        document.getElementById("plyStatus").textContent =
+          data.point_cloud_generated ? "YES" : "NO";
+
+        document.getElementById("lastPointCloud").textContent =
+          data.last_point_cloud ?? "None";
+      }
+      function downloadPly() {
+        window.location.href = "/download-ply";
+      }
+      setInterval(() => {
+        updateLogs();
+
+        updateStatus();
+      }, 1000);
+
+      updateLogs();
+
+      updateStatus();
 
       updateLogs();
     </script>

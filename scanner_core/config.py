@@ -4,7 +4,8 @@ CAPTURE_DELAY = 0.5
 
 CAMERA_INDEX = 0
 
-OUTPUT_FOLDER = "captures"
+OUTPUT_FOLDER = "outputs/captures"
+POINT_CLOUD_FOLDER = "outputs/point_clouds"
 POINT_CLOUD_FILE = "scan_result.ply"
 
 LASER_THRESHOLD = 180
