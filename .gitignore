@@ -1,4 +1,9 @@
 .venv/
 __pycache__/
-captures/
-*.jpg
+*.pyc
+
+outputs/captures/
+outputs/point_clouds/*.ply
+
+.DS_Store
+Thumbs.db
