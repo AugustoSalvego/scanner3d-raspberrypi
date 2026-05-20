@@ -1,272 +1,165 @@
-from flask import Flask, render_template, Response, request, jsonify
-import cv2
-import os
-from datetime import datetime
+from flask import Flask
+from flask import Response
+from flask import jsonify
+from flask import render_template
 from flask import send_from_directory
+
 import glob
+import os
+import threading
 import time
+
+from scanner_core.camera import capture
+from scanner_core.camera import encode_frame
+from scanner_core.camera import release
+from scanner_core.config import OUTPUT_FOLDER
+from scanner_core.logger import add_log
+from scanner_core.logger import get_logs
+from scanner_core.pipeline import execute_scan
+from scanner_core.pipeline import stop
+from scanner_core.point_cloud import generate
+from scanner_core.status import get_status
+
 
 app = Flask(__name__)
 
-camera = cv2.VideoCapture(0)
-
-camera_settings = {
-    "brightness": 50,
-    "contrast": 50,
-    "saturation": 50
-}
-
-os.makedirs("captures", exist_ok=True)
-
-
-def apply_camera_settings():
-
-    camera.set(
-        cv2.CAP_PROP_BRIGHTNESS,
-        camera_settings["brightness"]
-    )
-
-    camera.set(
-        cv2.CAP_PROP_CONTRAST,
-        camera_settings["contrast"]
-    )
-
-    camera.set(
-        cv2.CAP_PROP_SATURATION,
-        camera_settings["saturation"]
-    )
+os.makedirs(
+    OUTPUT_FOLDER,
+    exist_ok=True
+)
 
 
 def generate_frames():
-
     while True:
+        frame = encode_frame()
 
-        success, frame = camera.read()
-
-        if not success:
+        if frame is None:
+            time.sleep(0.05)
             continue
 
-        _, buffer = cv2.imencode(
-            ".jpg",
-            frame
-        )
-
-        frame = buffer.tobytes()
-
         yield (
-
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n"
-
-            + frame +
-
-            b"\r\n"
-
+            + frame
+            + b"\r\n"
         )
 
 
 @app.route("/")
 def home():
-
-    return render_template(
-        "index.html",
-        settings=camera_settings
-    )
+    return render_template("index.html")
 
 
 @app.route("/video")
 def video():
-
     return Response(
-
         generate_frames(),
-
-        mimetype=
-        "multipart/x-mixed-replace; boundary=frame"
-
+        mimetype="multipart/x-mixed-replace; boundary=frame"
     )
 
 
-@app.route(
-    "/api/camera-settings",
-    methods=["POST"]
-)
-def update_camera_settings():
+@app.route("/capture", methods=["POST"])
+def capture_image():
+    filename = capture()
 
-    data = request.json
-
-    for key in camera_settings:
-
-        if key in data:
-
-            camera_settings[key] = int(
-                data[key]
-            )
-
-    apply_camera_settings()
-
-    return jsonify({
-
-        "success": True,
-
-        "settings":
-        camera_settings
-
-    })
-
-
-@app.route(
-    "/capture",
-    methods=["POST"]
-)
-def capture():
-
-    success, frame = camera.read()
-
-    if not success:
-
+    if filename is None:
         return jsonify({
-
             "success": False
-
         })
 
-    filename = datetime.now().strftime(
-
-        "capture_%Y%m%d_%H%M%S.jpg"
-
-    )
-
-    filepath = os.path.join(
-
-        "captures",
-        filename
-
-    )
-
-    cv2.imwrite(
-        filepath,
-        frame
-    )
+    add_log(f"Image captured: {filename}")
 
     return jsonify({
-
         "success": True,
-
         "file": filename
-
     })
+
 
 @app.route("/captures/<filename>")
 def get_capture(filename):
-
     return send_from_directory(
-        "captures",
+        OUTPUT_FOLDER,
         filename
     )
 
+
 @app.route("/clear-captures", methods=["POST"])
 def clear_captures():
-    files = glob.glob("captures/*.jpg")
+    files = glob.glob(
+        os.path.join(OUTPUT_FOLDER, "*.jpg")
+    )
 
     for file in files:
         os.remove(file)
+
+    add_log(f"Deleted captures: {len(files)}")
 
     return jsonify({
         "success": True,
         "deleted": len(files)
     })
 
+
 @app.route("/reset-camera", methods=["POST"])
 def reset_camera():
-    global camera
-    global camera_settings
+    release()
 
-    try:
-        camera.release()
-        time.sleep(1)
-    except Exception:
-        pass
-
-    camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-
-    camera_settings = {
-        "brightness": 50,
-        "contrast": 50,
-        "saturation": 50
-    }
-
-    apply_camera_settings()
+    add_log("Camera reset")
 
     return jsonify({
-        "success": True,
-        "message": "Camera restarted with default settings"
+        "success": True
     })
-
-scanner_status = {
-    "running": False
-}
-
-system_logs = []
-
-
-def add_log(message):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    system_logs.insert(0, f"[{timestamp}] {message}")
-
-    if len(system_logs) > 20:
-        system_logs.pop()
 
 
 @app.route("/start-scan", methods=["POST"])
 def start_scan():
-    scanner_status["running"] = True
-    add_log("Scan started")
+    thread = threading.Thread(
+        target=execute_scan,
+        daemon=True
+    )
+
+    thread.start()
 
     return jsonify({
-        "success": True,
-        "running": True
+        "success": True
     })
 
 
 @app.route("/stop-scan", methods=["POST"])
 def stop_scan():
-    scanner_status["running"] = False
-    add_log("Scan stopped")
+    stop()
 
     return jsonify({
-        "success": True,
-        "running": False
+        "success": True
     })
 
 
 @app.route("/generate-ply", methods=["POST"])
 def generate_ply():
-    add_log("PLY generation simulated")
+    generate()
 
     return jsonify({
-        "success": True,
-        "message": "PLY generation simulated"
+        "success": True
     })
 
 
 @app.route("/logs")
-def get_logs():
+def logs():
     return jsonify({
-        "logs": system_logs,
-        "running": scanner_status["running"]
+        "logs": get_logs()
     })
 
+
+@app.route("/status")
+def status():
+    return jsonify(
+        get_status()
+    )
+
+
 if __name__ == "__main__":
-
-    apply_camera_settings()
-
     app.run(
-
         debug=True,
-
         host="0.0.0.0",
-
         port=5000
-
     )
