@@ -15,7 +15,6 @@ import time
 from scanner_core.camera import capture
 from scanner_core.camera import encode_frame
 from scanner_core.camera import release
-from scanner_core.config import APP_VERSION
 from scanner_core.config import OUTPUT_FOLDER
 from scanner_core.config import POINT_CLOUD_FILE
 from scanner_core.config import POINT_CLOUD_FOLDER
@@ -31,7 +30,8 @@ from scanner_core.runtime_settings import update_settings
 from scanner_core.state import scanner_state
 from scanner_core.status import get_status
 from scanner_core.session import list_scan_sessions
-from scanner_core.state import scanner_state
+from web_interface.api_response import api_success
+from web_interface.api_response import api_error
 
 app = Flask(__name__)
 
@@ -106,21 +106,20 @@ def capture_image():
     if filename is None:
         add_log("Capture failed")
 
-        return jsonify({
-            "success": False,
-            "message": "Image capture failed."
-        }), 500
-
-    scanner_state["frames_captured"] += 1
-    scanner_state["last_capture"] = filename
+        return api_error(
+            message="Image capture failed",
+            status_code=500
+        )
 
     add_log(f"Image captured: {filename}")
 
-    return jsonify({
-        "success": True,
-        "file": filename,
-        "message": "Image captured successfully."
-    })
+    return api_success(
+        message="Image captured successfully",
+        data={
+            "file": filename
+        },
+        file=filename
+    )
 
 
 @app.route("/captures/<filename>")
@@ -144,11 +143,13 @@ def clear_captures():
 
     add_log(f"Deleted captures: {len(files)}")
 
-    return jsonify({
-        "success": True,
-        "deleted": len(files),
-        "message": "Captures cleared."
-    })
+    return api_success(
+        message="Captures cleared successfully",
+        data={
+            "deleted": len(files)
+        },
+        deleted=len(files)
+    )
 
 
 @app.route("/reset-camera", methods=["POST"])
@@ -157,19 +158,18 @@ def reset_camera():
 
     add_log("Camera reset requested")
 
-    return jsonify({
-        "success": True,
-        "message": "Camera reset requested."
-    })
+    return api_success(
+        message="Camera reset requested"
+    )
 
 
 @app.route("/start-scan", methods=["POST"])
 def start_scan():
-    if scanner_state["running"]:
-        return jsonify({
-            "success": False,
-            "message": "Scan is already running."
-        }), 409
+    if scanner_state.get("running"):
+        return api_error(
+            message="Scan is already running",
+            status_code=409
+        )
 
     thread = threading.Thread(
         target=execute_scan,
@@ -178,66 +178,79 @@ def start_scan():
 
     thread.start()
 
-    return jsonify({
-        "success": True,
-        "message": "Scan started."
-    })
+    return api_success(
+        message="Scan started successfully"
+    )
 
 
 @app.route("/stop-scan", methods=["POST"])
 def stop_scan():
     stop()
 
-    return jsonify({
-        "success": True,
-        "message": "Stop requested."
-    })
+    return api_success(
+        message="Stop scan requested"
+    )
 
 
 @app.route("/generate-ply", methods=["POST"])
 def generate_ply():
     try:
-        generate()
+        filepath = generate()
 
-        scanner_state["last_scan"] = datetime.now().strftime(
+        scanner_state["last_scan_time"] = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
         )
 
-        return jsonify({
-            "success": True,
-            "message": "PLY generated successfully."
-        })
+        return api_success(
+            message="PLY generated successfully",
+            data={
+                "file": filepath
+            },
+            file=filepath
+        )
 
     except Exception as error:
         scanner_state["last_error"] = str(error)
 
         add_log(f"PLY generation failed: {error}")
 
-        return jsonify({
-            "success": False,
-            "message": "PLY generation failed.",
-            "error": str(error)
-        }), 500
+        return api_error(
+            message="PLY generation failed",
+            status_code=500,
+            data={
+                "error": str(error)
+            }
+        )
 
 
 @app.route("/logs")
 def logs():
-    return jsonify({
-        "logs": get_logs()
-    })
+    logs_data = get_logs()
+
+    return api_success(
+        message="Logs loaded successfully",
+        data={
+            "logs": logs_data
+        },
+        logs=logs_data
+    )
 
 
 @app.route("/status")
 def status():
-    return jsonify(
-        get_status()
-    )
+    status_data = get_status()
+
+    return jsonify(status_data)
 
 
 @app.route("/settings", methods=["GET"])
 def settings_get():
-    return jsonify(
-        get_settings()
+    return api_success(
+        message="Settings loaded successfully",
+        data={
+            "settings": get_settings()
+        },
+        settings=get_settings()
     )
 
 
@@ -248,20 +261,26 @@ def settings_post():
     settings, errors = update_settings(data)
 
     if errors:
-        return jsonify({
-            "success": False,
-            "message": "Settings update failed.",
-            "errors": errors,
-            "settings": settings
-        }), 400
+        return api_error(
+            message="Settings update failed",
+            status_code=400,
+            data={
+                "errors": errors,
+                "settings": settings
+            },
+            errors=errors,
+            settings=settings
+        )
 
     add_log("Settings updated")
 
-    return jsonify({
-        "success": True,
-        "message": "Settings updated.",
-        "settings": settings
-    })
+    return api_success(
+        message="Settings updated successfully",
+        data={
+            "settings": settings
+        },
+        settings=settings
+    )
 
 
 @app.route("/simulation-mode", methods=["POST"])
@@ -318,9 +337,13 @@ def list_point_clouds():
         reverse=True
     )
 
-    return jsonify({
-        "files": files
-    })
+    return api_success(
+        message="Point cloud files loaded successfully",
+        data={
+            "files": files
+        },
+        files=files
+    )
 
 
 @app.route("/download-ply")
@@ -349,11 +372,14 @@ def download_ply():
     if not os.path.exists(filepath):
         add_log("Download failed: PLY file not found")
 
-        return jsonify({
-            "success": False,
-            "error": "PLY file not found. Generate PLY first.",
-            "expected_path": filepath
-        }), 404
+        return api_error(
+            message="PLY file not found. Generate PLY first.",
+            status_code=404,
+            data={
+                "expected_path": filepath
+            },
+            expected_path=filepath
+        )
 
     return send_from_directory(
         folder,
@@ -361,73 +387,130 @@ def download_ply():
         as_attachment=True
     )
 
+@app.route("/download-ply/<filename>")
+def download_ply_file(filename):
+    filepath = get_safe_ply_path(filename)
+
+    if filepath is None:
+        return api_error(
+            message="Invalid PLY filename",
+            status_code=400,
+            data={
+                "file": filename
+            }
+        )
+
+    if not os.path.exists(filepath):
+        return api_error(
+            message="PLY file not found",
+            status_code=404,
+            data={
+                "file": filename
+            }
+        )
+
+    folder = os.path.dirname(filepath)
+    safe_filename = os.path.basename(filepath)
+
+    return send_from_directory(
+        folder,
+        safe_filename,
+        as_attachment=True
+    )
 
 @app.route("/delete-ply/<filename>", methods=["POST"])
 def delete_ply_file(filename):
     filepath = get_safe_ply_path(filename)
 
-    if filepath is None or not os.path.exists(filepath):
-        return jsonify({
-            "success": False,
-            "message": "PLY file not found."
-        }), 404
+    if filepath is None:
+        return api_error(
+            message="Invalid PLY filename",
+            status_code=400,
+            data={
+                "file": filename
+            }
+        )
+
+    if not os.path.exists(filepath):
+        return api_error(
+            message="PLY file not found",
+            status_code=404,
+            data={
+                "file": filename
+            }
+        )
+
+    safe_filename = os.path.basename(filepath)
 
     os.remove(filepath)
 
-    if scanner_state["last_point_cloud"] == filepath:
-        scanner_state["last_point_cloud"] = None
-        scanner_state["point_cloud_generated"] = False
+    add_log(f"Deleted PLY: {safe_filename}")
 
-    add_log(f"PLY deleted: {filename}")
-
-    return jsonify({
-        "success": True,
-        "message": "PLY deleted successfully.",
-        "deleted": filename
-    })
-
+    return api_success(
+        message="PLY deleted successfully",
+        data={
+            "file": safe_filename
+        }
+    )
 
 @app.route("/health")
 def health():
-    return jsonify({
-        "status": "ok",
-        "scanner": "online"
-    })
+    return api_success(
+        message="Scanner service is online",
+        data={
+            "status": "ok",
+            "scanner": "online"
+        },
+        status="ok",
+        scanner="online"
+    )
 
 
 @app.route("/api-info")
 def api_info():
-    return jsonify({
-        "name": "Scanner 3D API",
-        "version": APP_VERSION,
-        "simulation_mode": get_settings()["simulation_mode"],
-        "routes": [
-            "/",
-            "/video",
-            "/capture",
-            "/clear-captures",
-            "/reset-camera",
-            "/start-scan",
-            "/stop-scan",
-            "/generate-ply",
-            "/download-ply",
-            "/point-clouds",
-            "/download-ply/<filename>",
-            "/delete-ply/<filename>",
-            "/settings",
-            "/simulation-mode",
-            "/logs",
-            "/status",
-            "/health",
-            "/api-info"
-        ]
-    })
+    settings = get_settings()
+
+    return api_success(
+        message="API information loaded successfully",
+        data={
+            "name": "Scanner 3D API",
+            "version": scanner_state.get("scanner_version", "0.1"),
+            "simulation_mode": settings["simulation_mode"],
+            "routes": [
+                "/",
+                "/video",
+                "/capture",
+                "/clear-captures",
+                "/reset-camera",
+                "/start-scan",
+                "/stop-scan",
+                "/generate-ply",
+                "/download-ply",
+                "/point-clouds",
+                "/download-ply/<filename>",
+                "/delete-ply/<filename>",
+                "/settings",
+                "/simulation-mode",
+                "/logs",
+                "/status",
+                "/health",
+                "/api-info",
+                "/scan-sessions"
+            ]
+        }
+    )
 
 @app.route("/scan-sessions")
 def scan_sessions():
-    return jsonify({
-        "sessions": list_scan_sessions()
-    })
+    sessions = list_scan_sessions()
+
+    return api_success(
+        message="Scan sessions loaded successfully",
+        data={
+            "sessions": sessions
+        },
+        sessions=sessions
+    )
 
 if __name__ == "__main__":
     app.run(

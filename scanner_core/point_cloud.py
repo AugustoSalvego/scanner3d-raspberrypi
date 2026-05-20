@@ -1,31 +1,38 @@
-import os
 import math
-
-from scanner_core.config import POINT_CLOUD_FOLDER
-from scanner_core.config import POINT_CLOUD_FILE
-
-from scanner_core.logger import add_log
-from scanner_core.state import scanner_state
-
+import os
 from datetime import datetime
 
+from scanner_core.config import POINT_CLOUD_FILE
+from scanner_core.config import POINT_CLOUD_FOLDER
+from scanner_core.logger import add_log
+from scanner_core.state import scanner_state
 from scanner_core.session import get_current_session
 from scanner_core.session import add_point_cloud_to_session
+
+
+def generate_point_cloud_filename(session=None):
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M%S_%f"
+    )[:-3]
+
+    if session is not None:
+        session_id = session["session_id"]
+        return f"point_cloud_{session_id}_{timestamp}.ply"
+
+    return f"point_cloud_manual_{timestamp}.ply"
+
 
 def generate():
     add_log("Generating point cloud")
 
     session = get_current_session()
 
-    filename = datetime.now().strftime(
-        "point_cloud_%Y%m%d_%H%M%S.ply"
-    )
-
     if session is not None:
         output_folder = session["point_clouds_path"]
+        filename = generate_point_cloud_filename(session)
     else:
         output_folder = POINT_CLOUD_FOLDER
-        filename = POINT_CLOUD_FILE
+        filename = generate_point_cloud_filename()
 
     os.makedirs(
         output_folder,
@@ -46,9 +53,7 @@ def generate():
         y = math.sin(angle)
         z = i * 0.01
 
-        points.append(
-            (x, y, z)
-        )
+        points.append((x, y, z))
 
     with open(filepath, "w", encoding="utf-8") as file:
         file.write("ply\n")
@@ -68,3 +73,5 @@ def generate():
     add_point_cloud_to_session(filename)
 
     add_log(f"PLY generated: {filepath}")
+
+    return filepath

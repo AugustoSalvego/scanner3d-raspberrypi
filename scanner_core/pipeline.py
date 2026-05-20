@@ -55,7 +55,9 @@ def execute_scan():
 
             time.sleep(settings["step_delay"])
 
-            filename = capture()
+            filename = capture(
+                step_number=step + 1
+            )
 
             if filename:
                 add_log(f"Captured {filename}")

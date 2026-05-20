@@ -9,6 +9,7 @@ from scanner_core.logger import add_log
 from scanner_core.session import get_current_session
 from scanner_core.session import add_capture_to_session
 
+
 camera = None
 
 
@@ -37,7 +38,18 @@ def get_frame():
     return None
 
 
-def capture():
+def generate_capture_filename(step_number=None):
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M%S_%f"
+    )[:-3]
+
+    if step_number is not None:
+        return f"capture_step_{step_number:03d}_{timestamp}.jpg"
+
+    return f"capture_manual_{timestamp}.jpg"
+
+
+def capture(step_number=None):
     frame = get_frame()
 
     if frame is None:
@@ -46,8 +58,8 @@ def capture():
 
     session = get_current_session()
 
-    filename = datetime.now().strftime(
-        "capture_%Y%m%d_%H%M%S.jpg"
+    filename = generate_capture_filename(
+        step_number=step_number
     )
 
     if session is not None:
