@@ -30,7 +30,8 @@ from scanner_core.runtime_settings import toggle_simulation_mode
 from scanner_core.runtime_settings import update_settings
 from scanner_core.state import scanner_state
 from scanner_core.status import get_status
-
+from scanner_core.session import list_scan_sessions
+from scanner_core.state import scanner_state
 
 app = Flask(__name__)
 
@@ -284,32 +285,6 @@ def simulation_mode():
         "simulation_mode": settings["simulation_mode"]
     })
 
-
-@app.route("/download-ply")
-def download_ply():
-    folder = os.path.abspath(POINT_CLOUD_FOLDER)
-
-    filepath = os.path.join(
-        folder,
-        POINT_CLOUD_FILE
-    )
-
-    if not os.path.exists(filepath):
-        add_log("Download failed: PLY file not found")
-
-        return jsonify({
-            "success": False,
-            "error": "PLY file not found. Generate PLY first.",
-            "expected_path": filepath
-        }), 404
-
-    return send_from_directory(
-        folder,
-        POINT_CLOUD_FILE,
-        as_attachment=True
-    )
-
-
 @app.route("/point-clouds")
 def list_point_clouds():
     folder = os.path.abspath(POINT_CLOUD_FOLDER)
@@ -348,21 +323,41 @@ def list_point_clouds():
     })
 
 
-@app.route("/download-ply/<filename>")
-def download_ply_file(filename):
-    filepath = get_safe_ply_path(filename)
+@app.route("/download-ply")
+def download_ply():
+    last_point_cloud = scanner_state.get("last_point_cloud")
 
-    if filepath is None or not os.path.exists(filepath):
-        return jsonify({
-            "success": False,
-            "error": "PLY file not found"
-        }), 404
+    if last_point_cloud is not None:
+        filepath = os.path.abspath(last_point_cloud)
+        folder = os.path.dirname(filepath)
+        filename = os.path.basename(filepath)
+
+        if os.path.exists(filepath):
+            return send_from_directory(
+                folder,
+                filename,
+                as_attachment=True
+            )
 
     folder = os.path.abspath(POINT_CLOUD_FOLDER)
 
+    filepath = os.path.join(
+        folder,
+        POINT_CLOUD_FILE
+    )
+
+    if not os.path.exists(filepath):
+        add_log("Download failed: PLY file not found")
+
+        return jsonify({
+            "success": False,
+            "error": "PLY file not found. Generate PLY first.",
+            "expected_path": filepath
+        }), 404
+
     return send_from_directory(
         folder,
-        filename,
+        POINT_CLOUD_FILE,
         as_attachment=True
     )
 
@@ -428,6 +423,11 @@ def api_info():
         ]
     })
 
+@app.route("/scan-sessions")
+def scan_sessions():
+    return jsonify({
+        "sessions": list_scan_sessions()
+    })
 
 if __name__ == "__main__":
     app.run(

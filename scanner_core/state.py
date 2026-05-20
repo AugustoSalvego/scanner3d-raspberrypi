@@ -13,4 +13,6 @@ scanner_state = {
     "last_scan": None,
     "last_error": None,
     "simulation_mode": SIMULATION_MODE_DEFAULT,
+    "current_session": None,
+    "last_session": None,
 }

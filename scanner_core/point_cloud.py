@@ -7,18 +7,34 @@ from scanner_core.config import POINT_CLOUD_FILE
 from scanner_core.logger import add_log
 from scanner_core.state import scanner_state
 
+from datetime import datetime
+
+from scanner_core.session import get_current_session
+from scanner_core.session import add_point_cloud_to_session
 
 def generate():
     add_log("Generating point cloud")
 
+    session = get_current_session()
+
+    filename = datetime.now().strftime(
+        "point_cloud_%Y%m%d_%H%M%S.ply"
+    )
+
+    if session is not None:
+        output_folder = session["point_clouds_path"]
+    else:
+        output_folder = POINT_CLOUD_FOLDER
+        filename = POINT_CLOUD_FILE
+
     os.makedirs(
-        POINT_CLOUD_FOLDER,
+        output_folder,
         exist_ok=True
     )
 
     filepath = os.path.join(
-        POINT_CLOUD_FOLDER,
-        POINT_CLOUD_FILE
+        output_folder,
+        filename
     )
 
     points = []
@@ -48,5 +64,7 @@ def generate():
 
     scanner_state["point_cloud_generated"] = True
     scanner_state["last_point_cloud"] = filepath
+
+    add_point_cloud_to_session(filename)
 
     add_log(f"PLY generated: {filepath}")
