@@ -32,6 +32,9 @@ from scanner_core.status import get_status
 from scanner_core.session import list_scan_sessions
 from web_interface.api_response import api_success
 from web_interface.api_response import api_error
+from scanner_core.calibration import get_calibration_status
+from scanner_core.calibration import create_default_calibration_files
+from scanner_core.viewer import get_viewer_status
 
 app = Flask(__name__)
 
@@ -496,6 +499,8 @@ def api_info():
                 "/health",
                 "/api-info",
                 "/scan-sessions"
+                "/calibration/status",
+                "/viewer/status"
             ]
         }
     )
@@ -512,7 +517,33 @@ def scan_sessions():
         sessions=sessions
     )
 
+@app.route("/calibration/status")
+def calibration_status():
+    status = get_calibration_status()
+
+    return api_success(
+        message="Calibration status loaded successfully",
+        data={
+            "calibration": status
+        },
+        calibration=status
+    )
+
+@app.route("/viewer/status")
+def viewer_status():
+    status = get_viewer_status()
+
+    return api_success(
+        message="Viewer status loaded successfully",
+        data={
+            "viewer": status
+        },
+        viewer=status
+    )
+
 if __name__ == "__main__":
+    create_default_calibration_files()
+
     app.run(
         debug=True,
         host="0.0.0.0",

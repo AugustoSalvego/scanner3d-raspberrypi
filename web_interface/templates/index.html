@@ -435,6 +435,54 @@
         color: #d1d5db;
         margin-top: 4px;
       }
+      .modules-grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .module-card {
+        background: rgba(15, 23, 42, 0.75);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      .module-title {
+        color: var(--text-main);
+        font-weight: bold;
+        margin-bottom: 6px;
+      }
+
+      .module-description {
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.45;
+        margin-bottom: 10px;
+      }
+
+      .module-badge {
+        border-radius: 999px;
+        display: inline-block;
+        font-size: 12px;
+        font-weight: bold;
+        padding: 6px 10px;
+      }
+
+      .module-planned {
+        background: rgba(56, 189, 248, 0.16);
+        color: #bae6fd;
+      }
+
+      .module-future {
+        background: rgba(139, 92, 246, 0.16);
+        color: #ddd6fe;
+      }
+
+      .module-disabled {
+        background: rgba(148, 163, 184, 0.16);
+        color: #cbd5e1;
+      }
 
       @media (max-width: 1050px) {
         .dashboard-grid {
@@ -476,6 +524,17 @@
           display: block;
           overflow-x: auto;
           white-space: nowrap;
+        }
+      }
+      @media (max-width: 1050px) {
+        .modules-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .modules-grid {
+          grid-template-columns: 1fr;
         }
       }
     </style>
@@ -692,7 +751,72 @@
 
         <div id="scanSessionsContainer"></div>
       </section>
+      <section class="card" style="margin-top: 24px">
+        <div class="card-header">
+          <div>
+            <h2>Future Modules</h2>
+            <p class="card-description">
+              Planned modules for the next development stages of the Scanner3D
+              system.
+            </p>
+          </div>
+        </div>
 
+        <div class="modules-grid">
+          <div class="module-card">
+            <div class="module-title">Camera Calibration</div>
+            <div class="module-description">
+              Future module for camera matrix, distortion correction and
+              calibration files.
+            </div>
+            <span class="module-badge module-planned">Planned</span>
+          </div>
+
+          <div class="module-card">
+            <div class="module-title">Laser Line Detection</div>
+            <div class="module-description">
+              Extraction and filtering of the red laser line from captured
+              frames.
+            </div>
+            <span class="module-badge module-planned">Planned</span>
+          </div>
+
+          <div class="module-card">
+            <div class="module-title">Real Point Cloud Reconstruction</div>
+            <div class="module-description">
+              Conversion of laser line data and platform angles into real 3D
+              points.
+            </div>
+            <span class="module-badge module-planned">Planned</span>
+          </div>
+
+          <div class="module-card">
+            <div class="module-title">3D Viewer</div>
+            <div class="module-description">
+              Future browser-based viewer for previewing generated PLY point
+              clouds.
+            </div>
+            <span class="module-badge module-future">Future</span>
+          </div>
+
+          <div class="module-card">
+            <div class="module-title">Mesh Generation</div>
+            <div class="module-description">
+              Future conversion from point cloud data into a connected 3D
+              surface mesh.
+            </div>
+            <span class="module-badge module-future">Future</span>
+          </div>
+
+          <div class="module-card">
+            <div class="module-title">GPIO Motor Control</div>
+            <div class="module-description">
+              Real Raspberry Pi motor control for the scanner turntable.
+            </div>
+            <span class="module-badge module-disabled">Hardware Stage</span>
+          </div>
+        </div>
+      </section>
       <section class="card" style="margin-top: 24px">
         <div class="card-header">
           <div>
@@ -1191,7 +1315,6 @@
       updateStatus();
       updatePointClouds();
       updateScanSessions();
-      
     </script>
   </body>
 </html>
