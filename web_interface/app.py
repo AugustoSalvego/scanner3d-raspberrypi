@@ -243,7 +243,13 @@ def logs():
 def status():
     status_data = get_status()
 
-    return jsonify(status_data)
+    return api_success(
+        message="Scanner status loaded successfully",
+        data={
+            "status": status_data
+        },
+        scanner_status=status_data
+    )
 
 
 @app.route("/settings", methods=["GET"])
@@ -286,8 +292,21 @@ def settings_post():
     )
 
 
+@app.route("/simulation-mode", methods=["GET"])
+def simulation_mode_get():
+    settings = get_settings()
+
+    return api_success(
+        message="Simulation mode loaded successfully",
+        data={
+            "simulation_mode": settings["simulation_mode"]
+        },
+        simulation_mode=settings["simulation_mode"]
+    )
+
+
 @app.route("/simulation-mode", methods=["POST"])
-def simulation_mode():
+def simulation_mode_post():
     data = request.get_json(silent=True) or {}
 
     if "enabled" in data:
@@ -301,11 +320,13 @@ def simulation_mode():
 
     add_log(f"Simulation mode changed to {status_text}")
 
-    return jsonify({
-        "success": True,
-        "message": f"Simulation Mode: {status_text}.",
-        "simulation_mode": settings["simulation_mode"]
-    })
+    return api_success(
+        message=f"Simulation Mode: {status_text}.",
+        data={
+            "simulation_mode": settings["simulation_mode"]
+        },
+        simulation_mode=settings["simulation_mode"]
+    )
 
 @app.route("/point-clouds")
 def list_point_clouds():
@@ -477,7 +498,7 @@ def api_info():
         message="API information loaded successfully",
         data={
             "name": "Scanner 3D API",
-            "version": scanner_state.get("scanner_version", "0.1"),
+            "version": scanner_state.get("version", "0.1"),
             "simulation_mode": settings["simulation_mode"],
             "routes": [
                 "/",
@@ -498,7 +519,7 @@ def api_info():
                 "/status",
                 "/health",
                 "/api-info",
-                "/scan-sessions"
+                "/scan-sessions",
                 "/calibration/status",
                 "/viewer/status"
             ]
