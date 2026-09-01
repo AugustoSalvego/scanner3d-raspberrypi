@@ -39,6 +39,8 @@ from scanner_core.viewer import get_viewer_status
 from scanner_core.laser_detection import analyze_laser_frame
 from scanner_core.laser_detection import encode_laser_mask
 from scanner_core.laser_detection import encode_laser_overlay
+from scanner_core.laser_detection import get_laser_background_status
+from scanner_core.laser_detection import save_laser_background
 
 app = Flask(__name__)
 
@@ -150,6 +152,34 @@ def laser_overlay_video():
     return Response(
         generate_laser_overlay_frames(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.route("/calibrate-laser-background", methods=["POST"])
+def calibrate_laser_background():
+    frame = get_frame()
+
+    if frame is None:
+        return api_error(
+            message="No camera frame available",
+            status_code=500
+        )
+
+    data = save_laser_background(frame)
+
+    add_log("Laser background calibration saved")
+
+    return api_success(
+        message="Laser background calibrated successfully",
+        data=data
+    )
+
+
+@app.route("/laser-background-status")
+def laser_background_status():
+    return api_success(
+        message="Laser background status loaded",
+        data=get_laser_background_status()
     )
 
 
