@@ -582,6 +582,18 @@
             </button>
 
             <button onclick="resetCamera()">Reset Camera</button>
+
+            <button class="btn-purple" onclick="window.open('/laser-overlay-video', '_blank')">
+              Laser Overlay
+            </button>
+
+            <button class="btn-warning" onclick="window.open('/laser-mask-video', '_blank')">
+              Laser Mask
+            </button>
+
+            <button onclick="runLaserDiagnostic()">
+              Laser Diagnostic
+            </button>
           </div>
 
           <h3>Captured Images</h3>
@@ -778,7 +790,7 @@
               Extraction and filtering of the red laser line from captured
               frames.
             </div>
-            <span class="module-badge module-planned">Planned</span>
+            <span class="module-badge module-planned">Active Diagnostic</span>
           </div>
 
           <div class="module-card">
@@ -857,6 +869,25 @@
         }
 
         return data;
+      }
+
+
+      async function runLaserDiagnostic() {
+        try {
+          const result = await requestJson("/laser-diagnostic");
+          const data = result.data || {};
+
+          showMessage(
+            "Laser pixels: " +
+              data.laser_pixels +
+              " | Coverage: " +
+              data.laser_coverage_percent +
+              "%",
+            "info",
+          );
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
       }
 
       async function resetCamera() {

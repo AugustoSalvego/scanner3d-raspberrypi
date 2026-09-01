@@ -14,6 +14,7 @@ import time
 
 from scanner_core.camera import capture
 from scanner_core.camera import encode_frame
+from scanner_core.camera import get_frame
 from scanner_core.camera import release
 from scanner_core.config import OUTPUT_FOLDER
 from scanner_core.config import POINT_CLOUD_FILE
@@ -35,6 +36,9 @@ from web_interface.api_response import api_error
 from scanner_core.calibration import get_calibration_status
 from scanner_core.calibration import create_default_calibration_files
 from scanner_core.viewer import get_viewer_status
+from scanner_core.laser_detection import analyze_laser_frame
+from scanner_core.laser_detection import encode_laser_mask
+from scanner_core.laser_detection import encode_laser_overlay
 
 app = Flask(__name__)
 
@@ -87,6 +91,82 @@ def get_safe_ply_path(filename):
         return None
 
     return filepath
+
+
+def generate_laser_mask_frames():
+    while True:
+        frame = get_frame()
+
+        if frame is None:
+            time.sleep(0.05)
+            continue
+
+        encoded_frame = encode_laser_mask(frame)
+
+        if encoded_frame is None:
+            time.sleep(0.05)
+            continue
+
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n"
+            + encoded_frame
+            + b"\r\n"
+        )
+
+
+def generate_laser_overlay_frames():
+    while True:
+        frame = get_frame()
+
+        if frame is None:
+            time.sleep(0.05)
+            continue
+
+        encoded_frame = encode_laser_overlay(frame)
+
+        if encoded_frame is None:
+            time.sleep(0.05)
+            continue
+
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n"
+            + encoded_frame
+            + b"\r\n"
+        )
+
+
+@app.route("/laser-mask-video")
+def laser_mask_video():
+    return Response(
+        generate_laser_mask_frames(),
+        mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.route("/laser-overlay-video")
+def laser_overlay_video():
+    return Response(
+        generate_laser_overlay_frames(),
+        mimetype="multipart/x-mixed-replace; boundary=frame"
+    )
+
+
+@app.route("/laser-diagnostic")
+def laser_diagnostic():
+    frame = get_frame()
+
+    if frame is None:
+        return api_error(
+            message="No camera frame available",
+            status_code=500
+        )
+
+    return api_success(
+        message="Laser diagnostic generated",
+        data=analyze_laser_frame(frame)
+    )
 
 
 @app.route("/")
