@@ -583,18 +583,28 @@
 
             <button onclick="resetCamera()">Reset Camera</button>
 
-            <button class="btn-purple" onclick="window.open('/laser-overlay-video', '_blank')">
+            <button class="btn-purple" onclick="openDiagnosticWindow('/laser-overlay-video', 'Laser Overlay')">
               Laser Overlay
             </button>
 
-            <button class="btn-warning" onclick="window.open('/laser-mask-video', '_blank')">
+            <button class="btn-warning" onclick="openDiagnosticWindow('/laser-mask-video', 'Laser Mask')">
               Laser Mask
             </button>
 
             <button onclick="runLaserDiagnostic()">
               Laser Diagnostic
             </button>
+
+            <button class="btn-warning" onclick="calibrateLaserBackground()">
+              Calibrate Background
+            </button>
           </div>
+
+          <div
+            id="diagnosticFeedback"
+            class="disabled-info"
+            style="display: none; margin-top: 14px"
+          ></div>
 
           <h3>Captured Images</h3>
 
@@ -1346,6 +1356,119 @@
       updateStatus();
       updatePointClouds();
       updateScanSessions();
+
+      // UX_FEEDBACK_SAFE_OVERRIDES
+      window.showDiagnosticFeedback = function (message, type = "info") {
+        const feedbackBox =
+          document.getElementById("diagnosticFeedback") ||
+          document.getElementById("laserDiagnosticResult");
+
+        if (feedbackBox) {
+          feedbackBox.style.display = "block";
+          feedbackBox.textContent = message;
+        }
+
+        if (typeof showMessage === "function") {
+          showMessage(message, type);
+        }
+      };
+
+      window.setActionButtonsDisabled = function (disabled) {
+        document.querySelectorAll("button").forEach((button) => {
+          button.disabled = disabled;
+        });
+      };
+
+      window.openDiagnosticWindow = function (url, label) {
+        showDiagnosticFeedback("Opening " + label + "...", "info");
+
+        const popup = window.open(url, "_blank");
+
+        if (!popup) {
+          showDiagnosticFeedback(
+            label + " was blocked by the browser. Open directly: " + url,
+            "warning",
+          );
+
+          return;
+        }
+
+        popup.focus();
+
+        showDiagnosticFeedback(label + " opened in a new tab.", "success");
+      };
+
+      window.runLaserDiagnostic = async function () {
+        try {
+          showDiagnosticFeedback("Running laser diagnostic...", "info");
+
+          const result = await requestJson("/laser-diagnostic");
+          const data = result.data || {};
+
+          let message =
+            "Laser pixels: " +
+            data.laser_pixels +
+            " | Coverage: " +
+            data.laser_coverage_percent +
+            "% | Resolution: " +
+            data.width +
+            "x" +
+            data.height;
+
+          if (data.background_calibrated !== undefined) {
+            message +=
+              " | Background calibrated: " +
+              (data.background_calibrated ? "YES" : "NO");
+          }
+
+          showDiagnosticFeedback(message, "info");
+        } catch (error) {
+          showDiagnosticFeedback(
+            "Laser diagnostic failed: " + error.message,
+            "error",
+          );
+        }
+      };
+
+      window.calibrateLaserBackground = async function () {
+        const confirmed = confirm(
+          "Remove the object from the platform, keep the laser and lighting unchanged, then continue."
+        );
+
+        if (!confirmed) {
+          showDiagnosticFeedback("Background calibration cancelled.", "warning");
+          return;
+        }
+
+        try {
+          setActionButtonsDisabled(true);
+          showDiagnosticFeedback("Calibrating laser background...", "info");
+
+          const result = await requestJson("/calibrate-laser-background", {
+            method: "POST",
+          });
+
+          const data = result.data || {};
+
+          const message =
+            "Background calibrated. Pixels: " +
+            data.laser_pixels +
+            " | Coverage: " +
+            data.laser_coverage_percent +
+            "%";
+
+          showDiagnosticFeedback(message, "success");
+        } catch (error) {
+          showDiagnosticFeedback(
+            "Background calibration failed: " + error.message,
+            "error",
+          );
+        } finally {
+          setActionButtonsDisabled(false);
+        }
+      };
+
+
     </script>
   </body>
 </html>
