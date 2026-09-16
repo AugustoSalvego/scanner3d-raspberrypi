@@ -490,20 +490,41 @@ def transform_to_object_frame(
     return derotate_about_z(local, angle_rad)
 
 
+#: Ratio between the two principal spreads of a 2D point set below which the
+#: points are treated as collinear.  A usable arc, even a short one, stays well
+#: above this; a straight line lands near machine epsilon.
+MIN_CIRCLE_SPREAD_RATIO = 1e-4
+
+
 def fit_circle_2d(points_2d: np.ndarray) -> tuple[np.ndarray, float, float]:
     """Algebraic least-squares circle fit.
 
     Solves ``x^2 + y^2 + D*x + E*y + F = 0`` linearly, which gives the centre
     ``(-D/2, -E/2)`` and radius ``sqrt(centre^2 - F)``.
 
+    Collinear input is rejected up front.  The linear system stays solvable for
+    points on a straight line - least squares happily fits a line to a parabola
+    and hands back a plausible looking centre and radius - so the degeneracy has
+    to be detected from the geometry rather than from the solver.
+
     Returns:
         ``(centre, radius, rms)``.
+
+    Raises:
+        ValueError: If there are fewer than 3 points, if they are collinear, or
+            if the resulting radius would be imaginary.
     """
 
     points_2d = np.asarray(points_2d, dtype=np.float64).reshape(-1, 2)
 
     if len(points_2d) < 3:
         raise ValueError("At least 3 points are required to fit a circle.")
+
+    centered = points_2d - points_2d.mean(axis=0)
+    spread = np.linalg.svd(centered, compute_uv=False)
+
+    if spread[0] < EPSILON or spread[1] / spread[0] < MIN_CIRCLE_SPREAD_RATIO:
+        raise ValueError("Circle fit is degenerate: the points are collinear.")
 
     x = points_2d[:, 0]
     y = points_2d[:, 1]

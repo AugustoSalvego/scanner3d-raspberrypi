@@ -44,9 +44,8 @@ from scanner_core.geometry import (
     pixels_to_camera_rays,
 )
 
-#: A ray is considered to touch the laser stripe when its intersection with the
-#: laser plane and with the object agree to better than this, in millimetres.
-SURFACE_TOLERANCE_MM = 0.75
+#: Minimum number of lit scan lines for a rendered frame to be worth returning.
+MIN_RENDERED_LINES = 4
 
 
 @dataclass
@@ -296,20 +295,34 @@ class SyntheticScene:
         return self._ray_cache
 
     def render(self, angle_deg: float, *, laser_on: bool = True) -> RenderedFrame:
-        """Render one capture with the platform at ``angle_deg``."""
+        """Render one capture with the platform at ``angle_deg``.
+
+        The stripe is found as the *zero crossing* of ``t_plane - t_object``
+        along each image row, where ``t_plane`` is where a pixel ray meets the
+        laser plane and ``t_object`` is where it first meets the solid.  Those
+        two distances are equal exactly on the illuminated curve, so the
+        crossing gives the stripe centre to sub-pixel accuracy.
+
+        A fixed millimetre tolerance would not do: the depth step between
+        neighbouring pixels scales with the focal length, so any fixed
+        threshold either misses the stripe entirely on a wide-angle rig or
+        smears it into a band on a narrow one.
+        """
 
         width = self.config.image_width
         height = self.config.image_height
 
         image = self._render_background()
 
+        empty = RenderedFrame(
+            image=image,
+            angle_deg=angle_deg,
+            truth_points=np.zeros((0, 3), dtype=np.float64),
+            laser_pixel_count=0,
+        )
+
         if not laser_on:
-            return RenderedFrame(
-                image=image,
-                angle_deg=angle_deg,
-                truth_points=np.zeros((0, 3), dtype=np.float64),
-                laser_pixel_count=0,
-            )
+            return empty
 
         directions = self._all_camera_rays()
 
@@ -323,7 +336,7 @@ class SyntheticScene:
         with np.errstate(invalid="ignore"):
             usable &= t_plane > 0
 
-        # Ray in object coordinates, so the analytic solid stays axis aligned.
+        # Work in object coordinates so the analytic solid stays axis aligned.
         angle_rad = float(np.radians(angle_deg))
 
         origin_local = camera_to_turntable(
@@ -338,29 +351,80 @@ class SyntheticScene:
 
         t_object = self._ray_object_entry(origins_object, directions_object)
 
-        with np.errstate(invalid="ignore"):
-            lit = usable & np.isfinite(t_object) & (np.abs(t_plane - t_object) <= SURFACE_TOLERANCE_MM)
+        delta = np.where(usable & np.isfinite(t_object), t_plane - t_object, np.nan)
 
-        if not np.any(lit):
-            return RenderedFrame(
-                image=image,
-                angle_deg=angle_deg,
-                truth_points=np.zeros((0, 3), dtype=np.float64),
-                laser_pixel_count=0,
-            )
+        rows, columns, depths = self._stripe_crossings(
+            delta.reshape(height, width), t_object.reshape(height, width)
+        )
 
-        truth_points = origins_object[lit] + t_object[lit, None] * directions_object[lit]
+        if len(rows) < MIN_RENDERED_LINES:
+            return empty
 
-        mask = lit.reshape(height, width)
+        # The true 3D point is the plane intersection along the interpolated ray.
+        pixels = np.column_stack([columns, rows.astype(np.float64)])
+        stripe_rays = pixels_to_camera_rays(pixels, self.camera_matrix, None, undistort=False)
 
-        image = self._draw_laser(image, mask)
+        stripe_denominator = stripe_rays @ self.laser_plane.normal
+        stripe_t = -self.laser_plane.offset / stripe_denominator
+
+        points_camera = stripe_t[:, None] * stripe_rays
+        points_local = camera_to_turntable(points_camera, self.axis_origin, self.axis_direction)
+        truth_points = derotate_about_z(points_local, angle_rad)
+
+        image = self._draw_laser(image, rows, columns)
 
         return RenderedFrame(
             image=image,
             angle_deg=angle_deg,
             truth_points=truth_points,
-            laser_pixel_count=int(np.count_nonzero(mask)),
+            laser_pixel_count=int(len(rows)),
         )
+
+    @staticmethod
+    def _stripe_crossings(
+        delta: np.ndarray, t_object: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Sub-pixel stripe position per row, from the sign change in ``delta``.
+
+        When a row contains more than one crossing - the laser plane can meet
+        both the near and the far side of a solid - the nearest one wins,
+        because that is the only surface the camera can actually see.
+        """
+
+        left = delta[:, :-1]
+        right = delta[:, 1:]
+
+        with np.errstate(invalid="ignore"):
+            both_finite = np.isfinite(left) & np.isfinite(right)
+            crossing = both_finite & ((left == 0) | (np.sign(left) != np.sign(right)))
+
+        row_index, column_index = np.nonzero(crossing)
+
+        if len(row_index) == 0:
+            empty = np.zeros(0)
+
+            return empty.astype(int), empty, empty
+
+        a = left[row_index, column_index]
+        b = right[row_index, column_index]
+
+        denominator = a - b
+        fraction = np.where(np.abs(denominator) > 1e-12, a / denominator, 0.0)
+        fraction = np.clip(fraction, 0.0, 1.0)
+
+        sub_columns = column_index + fraction
+        depth = t_object[row_index, column_index]
+
+        # Keep the nearest crossing on each row.
+        order = np.lexsort((depth, row_index))
+
+        sorted_rows = row_index[order]
+        keep = np.ones(len(sorted_rows), dtype=bool)
+        keep[1:] = sorted_rows[1:] != sorted_rows[:-1]
+
+        selected = order[keep]
+
+        return row_index[selected], sub_columns[selected], depth[selected]
 
     def _render_background(self) -> np.ndarray:
         """A dark, slightly textured scene, like a scanner enclosure."""
@@ -376,36 +440,27 @@ class SyntheticScene:
 
         return image
 
-    def _draw_laser(self, image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        """Draw a red stripe with a Gaussian cross-section along the mask.
+    def _draw_laser(
+        self, image: np.ndarray, rows: np.ndarray, columns: np.ndarray
+    ) -> np.ndarray:
+        """Draw a red stripe with a Gaussian cross-section.
 
         Drawing a soft profile rather than a hard binary mask is what makes the
         sub-pixel centroid meaningful: the detector has to interpolate, exactly
-        as it does on a real frame.
+        as it does on a real frame.  Centring the profile on the fractional
+        column also means the detector is measured against a stripe that really
+        does sit between pixels.
         """
 
-        height, width = mask.shape
+        height, width = image.shape[:2]
         sigma = max(0.4, float(self.config.laser_line_thickness_px) / 2.0)
 
-        columns = np.arange(width, dtype=np.float64)[None, :]
+        pixel_columns = np.arange(width, dtype=np.float64)[None, :]
 
-        if self.scan_axis_is_rows:
-            weights = mask.astype(np.float64)
-            totals = weights.sum(axis=1)
-            rows_with_laser = totals > 0
+        profile = np.zeros((height, width), dtype=np.float64)
 
-            centres = np.full(height, np.nan)
-            np.divide(
-                (weights * columns).sum(axis=1), totals, out=centres, where=rows_with_laser
-            )
-
-            profile = np.zeros((height, width), dtype=np.float64)
-            valid_rows = np.flatnonzero(rows_with_laser)
-
-            distance = columns - centres[valid_rows, None]
-            profile[valid_rows] = np.exp(-0.5 * (distance / sigma) ** 2)
-        else:  # pragma: no cover - only reachable with a transposed rig
-            profile = mask.astype(np.float64)
+        distance = pixel_columns - columns[:, None]
+        profile[rows] = np.exp(-0.5 * (distance / sigma) ** 2)
 
         intensity = np.clip(profile * 255.0, 0, 255)
 

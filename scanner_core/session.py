@@ -84,17 +84,25 @@ class PointCloudRecord:
         return asdict(self)
 
 
+#: Bytes of randomness appended to a session id.  Four bytes give 2^32 values
+#: per second, so even a burst of scans has a negligible collision chance - and
+#: SessionManager.create still checks the directory before using it.
+SESSION_ID_RANDOM_BYTES = 4
+
+
 def generate_session_id() -> str:
     """Build a session id that cannot collide with a neighbouring scan.
 
     Second resolution alone is not enough: two scans started back to back - or a
     scan started right after a cancelled one - would land on the same name and
-    silently share a folder.  A short random suffix removes that risk.
+    silently share a folder.  A random suffix removes that risk; the folder
+    existence check in :meth:`SessionManager.create` is what makes it a
+    guarantee rather than a probability.
     """
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    return f"scan_{stamp}_{secrets.token_hex(3)}"
+    return f"scan_{stamp}_{secrets.token_hex(SESSION_ID_RANDOM_BYTES)}"
 
 
 class ScanSession:
