@@ -2,1319 +2,487 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Scanner 3D Control Panel</title>
+    <title>Scanner3D Control Panel</title>
 
-    <style>
-      :root {
-        --bg-main: #0f172a;
-        --bg-card: #111827;
-        --bg-card-light: #1f2937;
-        --border: #334155;
-        --text-main: #f8fafc;
-        --text-muted: #94a3b8;
-        --blue: #38bdf8;
-        --blue-dark: #2563eb;
-        --green: #16a34a;
-        --green-dark: #15803d;
-        --red: #dc2626;
-        --red-dark: #b91c1c;
-        --yellow: #f59e0b;
-        --purple: #8b5cf6;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        background:
-          radial-gradient(
-            circle at top left,
-            rgba(56, 189, 248, 0.12),
-            transparent 30%
-          ),
-          var(--bg-main);
-        color: var(--text-main);
-        font-family: Arial, sans-serif;
-        margin: 0;
-        min-height: 100vh;
-      }
-
-      header {
-        border-bottom: 1px solid var(--border);
-        background: rgba(15, 23, 42, 0.85);
-        padding: 22px 30px;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        backdrop-filter: blur(10px);
-      }
-
-      .header-content {
-        align-items: center;
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
-        max-width: 1500px;
-        margin: 0 auto;
-      }
-
-      .title-block h1 {
-        color: var(--blue);
-        font-size: 28px;
-        margin: 0;
-      }
-
-      .title-block p {
-        color: var(--text-muted);
-        margin: 6px 0 0;
-      }
-
-      .environment-badge {
-        background: rgba(139, 92, 246, 0.16);
-        border: 1px solid rgba(139, 92, 246, 0.45);
-        border-radius: 999px;
-        color: #ddd6fe;
-        font-size: 13px;
-        font-weight: bold;
-        padding: 8px 14px;
-        white-space: nowrap;
-      }
-
-      main {
-        max-width: 1500px;
-        margin: 0 auto;
-        padding: 30px;
-      }
-
-      .message {
-        border-radius: 12px;
-        display: none;
-        font-weight: bold;
-        margin-bottom: 22px;
-        padding: 14px 16px;
-      }
-
-      .message.show {
-        display: block;
-      }
-
-      .message.success {
-        background: rgba(22, 163, 74, 0.16);
-        border: 1px solid rgba(22, 163, 74, 0.55);
-        color: #bbf7d0;
-      }
-
-      .message.warning {
-        background: rgba(245, 158, 11, 0.16);
-        border: 1px solid rgba(245, 158, 11, 0.55);
-        color: #fde68a;
-      }
-
-      .message.error {
-        background: rgba(220, 38, 38, 0.16);
-        border: 1px solid rgba(220, 38, 38, 0.55);
-        color: #fecaca;
-      }
-
-      .message.info {
-        background: rgba(56, 189, 248, 0.16);
-        border: 1px solid rgba(56, 189, 248, 0.55);
-        color: #bae6fd;
-      }
-
-      .dashboard-grid {
-        display: grid;
-        gap: 24px;
-        grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
-      }
-
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-      }
-
-      .card {
-        background: rgba(17, 24, 39, 0.96);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: 0 16px 35px rgba(0, 0, 0, 0.22);
-        padding: 22px;
-      }
-
-      .card-header {
-        align-items: flex-start;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 18px;
-      }
-
-      .card h2 {
-        font-size: 20px;
-        margin: 0;
-      }
-
-      .card-description {
-        color: var(--text-muted);
-        font-size: 14px;
-        line-height: 1.5;
-        margin: 6px 0 0;
-      }
-
-      .camera-frame {
-        background: #020617;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        overflow: hidden;
-      }
-
-      .camera-frame img {
-        display: block;
-        width: 100%;
-      }
-
-      .button-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 16px;
-      }
-
-      button {
-        background: var(--blue-dark);
-        border: none;
-        border-radius: 10px;
-        color: white;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: bold;
-        padding: 11px 14px;
-        transition:
-          background 0.2s,
-          transform 0.2s,
-          opacity 0.2s;
-      }
-
-      button:hover {
-        background: #1d4ed8;
-        transform: translateY(-1px);
-      }
-
-      button:disabled {
-        cursor: not-allowed;
-        opacity: 0.55;
-        transform: none;
-      }
-
-      .btn-success {
-        background: var(--green);
-      }
-
-      .btn-success:hover {
-        background: var(--green-dark);
-      }
-
-      .btn-danger {
-        background: var(--red);
-      }
-
-      .btn-danger:hover {
-        background: var(--red-dark);
-      }
-
-      .btn-warning {
-        background: var(--yellow);
-      }
-
-      .btn-warning:hover {
-        background: #d97706;
-      }
-
-      .btn-purple {
-        background: var(--purple);
-      }
-
-      .btn-purple:hover {
-        background: #7c3aed;
-      }
-
-      .disabled-info {
-        background: rgba(15, 23, 42, 0.8);
-        border: 1px dashed var(--border);
-        border-radius: 12px;
-        color: #d1d5db;
-        line-height: 1.6;
-        padding: 14px;
-      }
-
-      .captures-grid {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        margin-top: 16px;
-      }
-
-      .thumbnail {
-        border: 2px solid var(--blue);
-        border-radius: 10px;
-        height: 95px;
-        object-fit: cover;
-        width: 100%;
-      }
-
-      .status-badge {
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: bold;
-        padding: 7px 12px;
-        white-space: nowrap;
-      }
-
-      .status-idle {
-        background: rgba(148, 163, 184, 0.16);
-        color: #cbd5e1;
-      }
-
-      .status-scanning {
-        background: rgba(56, 189, 248, 0.16);
-        color: #bae6fd;
-      }
-
-      .status-completed {
-        background: rgba(22, 163, 74, 0.16);
-        color: #bbf7d0;
-      }
-
-      .status-error {
-        background: rgba(220, 38, 38, 0.16);
-        color: #fecaca;
-      }
-
-      .status-list {
-        display: grid;
-        gap: 10px;
-      }
-
-      .status-row {
-        align-items: center;
-        background: rgba(31, 41, 55, 0.75);
-        border: 1px solid rgba(51, 65, 85, 0.7);
-        border-radius: 12px;
-        display: flex;
-        justify-content: space-between;
-        gap: 14px;
-        padding: 12px;
-      }
-
-      .status-row span:first-child {
-        color: var(--text-muted);
-        font-size: 14px;
-      }
-
-      .status-row span:last-child {
-        font-weight: bold;
-        max-width: 58%;
-        overflow-wrap: anywhere;
-        text-align: right;
-      }
-
-      .settings-grid {
-        display: grid;
-        gap: 12px;
-      }
-
-      label {
-        color: var(--text-muted);
-        display: block;
-        font-size: 14px;
-        margin-bottom: 6px;
-      }
-
-      input {
-        background: #020617;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        color: var(--text-main);
-        font-size: 15px;
-        padding: 11px;
-        width: 100%;
-      }
-
-      input:focus {
-        border-color: var(--blue);
-        outline: none;
-      }
-
-      table {
-        border-collapse: collapse;
-        margin-top: 12px;
-        width: 100%;
-      }
-
-      th,
-      td {
-        border-bottom: 1px solid var(--border);
-        padding: 12px 10px;
-        text-align: left;
-      }
-
-      th {
-        color: var(--text-muted);
-        font-size: 13px;
-        text-transform: uppercase;
-      }
-
-      td {
-        color: var(--text-main);
-        font-size: 14px;
-      }
-
-      .table-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .small-button {
-        font-size: 12px;
-        padding: 8px 10px;
-      }
-
-      .empty-state {
-        background: rgba(15, 23, 42, 0.75);
-        border: 1px dashed var(--border);
-        border-radius: 12px;
-        color: var(--text-muted);
-        line-height: 1.5;
-        margin-top: 12px;
-        padding: 18px;
-        text-align: center;
-      }
-
-      #logsContainer {
-        background: #020617;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        max-height: 270px;
-        overflow: auto;
-        padding: 10px;
-      }
-
-      .log {
-        border-bottom: 1px solid rgba(51, 65, 85, 0.65);
-        color: #d1d5db;
-        font-size: 13px;
-        line-height: 1.45;
-        padding: 6px 4px;
-      }
-
-      .log:last-child {
-        border-bottom: none;
-      }
-
-      .session-row {
-        margin-top: 10px;
-        padding: 12px;
-        background: #111827;
-        border-radius: 8px;
-        border-left: 4px solid #38bdf8;
-      }
-
-      .session-title {
-        font-weight: bold;
-        color: #38bdf8;
-      }
-
-      .session-info {
-        font-size: 14px;
-        color: #d1d5db;
-        margin-top: 4px;
-      }
-      .modules-grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .module-card {
-        background: rgba(15, 23, 42, 0.75);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 14px;
-      }
-
-      .module-title {
-        color: var(--text-main);
-        font-weight: bold;
-        margin-bottom: 6px;
-      }
-
-      .module-description {
-        color: var(--text-muted);
-        font-size: 13px;
-        line-height: 1.45;
-        margin-bottom: 10px;
-      }
-
-      .module-badge {
-        border-radius: 999px;
-        display: inline-block;
-        font-size: 12px;
-        font-weight: bold;
-        padding: 6px 10px;
-      }
-
-      .module-planned {
-        background: rgba(56, 189, 248, 0.16);
-        color: #bae6fd;
-      }
-
-      .module-future {
-        background: rgba(139, 92, 246, 0.16);
-        color: #ddd6fe;
-      }
-
-      .module-disabled {
-        background: rgba(148, 163, 184, 0.16);
-        color: #cbd5e1;
-      }
-
-      @media (max-width: 1050px) {
-        .dashboard-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .header-content {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .environment-badge {
-          white-space: normal;
-        }
-      }
-
-      @media (max-width: 640px) {
-        header,
-        main {
-          padding-left: 16px;
-          padding-right: 16px;
-        }
-
-        .card-header {
-          flex-direction: column;
-        }
-
-        .status-row {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .status-row span:last-child {
-          max-width: 100%;
-          text-align: left;
-        }
-
-        table {
-          display: block;
-          overflow-x: auto;
-          white-space: nowrap;
-        }
-      }
-      @media (max-width: 1050px) {
-        .modules-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-      }
-
-      @media (max-width: 640px) {
-        .modules-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="/static/css/dashboard.css" />
   </head>
 
   <body>
-    <header>
-      <div class="header-content">
-        <div class="title-block">
-          <h1>Scanner 3D Control Panel</h1>
-          <p>Raspberry Pi • Flask • OpenCV • Low-cost 3D scanning system</p>
+    <header class="app-header">
+      <div class="inner">
+        <div class="brand">
+          <h1>Scanner3D Control Panel</h1>
+          <p>Raspberry Pi &middot; laser triangulation &middot; v<span id="serviceVersion">-</span></p>
         </div>
 
-        <div class="environment-badge" id="environmentBadge">
-          Simulation Mode: ON
+        <div class="header-meta">
+          <span class="pill" id="modePill">Mode: -</span>
+          <span class="pill" id="badge">CONNECTING</span>
+          <button class="ghost small" id="refreshAll">Refresh lists</button>
         </div>
       </div>
     </header>
 
     <main>
-      <div id="systemMessage" class="message"></div>
-
-      <div class="dashboard-grid">
+      <div class="grid">
+        <!-- ------------------------------------------------ live camera -->
         <section class="card">
-          <div class="card-header">
+          <header>
             <div>
               <h2>Live Camera</h2>
-              <p class="card-description">
-                Live video stream used for scanner alignment and capture tests.
+              <p class="hint">
+                Preview used to align the object and the laser line. In simulation
+                mode this renders the virtual rig.
               </p>
             </div>
-          </div>
+          </header>
 
           <div class="camera-frame">
-            <img src="/video" alt="Live camera stream" />
+            <img id="stream" src="/video" alt="Live camera stream" />
           </div>
 
-          <div class="button-row">
-            <button class="btn-success" onclick="captureImage()">
-              Capture Test Image
-            </button>
-
-            <button class="btn-danger" onclick="clearCaptures()">
-              Clear Captures
-            </button>
-
-            <button onclick="resetCamera()">Reset Camera</button>
+          <div class="button-row" style="margin-top: 12px">
+            <button class="success" id="captureImage">Capture image</button>
+            <button class="danger" id="clearCaptures">Clear captures</button>
+            <button class="ghost" id="resetCamera">Reset camera</button>
           </div>
 
-          <h3>Captured Images</h3>
-
-          <div id="capturesContainer" class="captures-grid"></div>
+          <h3 style="font-size: 13px; margin: 16px 0 8px">Recent manual captures</h3>
+          <div class="thumbs" id="captureThumbs"></div>
         </section>
 
-        <aside class="side-column">
+        <!-- ------------------------------------------------ status stack -->
+        <div class="stack">
           <section class="card">
-            <div class="card-header">
+            <header>
               <div>
-                <h2>Scanner Status</h2>
-                <p class="card-description">
-                  Current runtime information from the scanner backend.
-                </p>
+                <h2>Scan Status</h2>
+                <p class="hint">Live progress of the acquisition pipeline.</p>
               </div>
+            </header>
 
-              <span id="scannerBadge" class="status-badge status-idle">
-                IDLE
-              </span>
+            <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+
+            <div class="kv">
+              <div class="row"><span>Progress</span><span id="progressLabel">0%</span></div>
+              <div class="row"><span>Phase</span><span id="scanPhase">-</span></div>
+              <div class="row"><span>Session</span><span id="scanSession">-</span></div>
+              <div class="row"><span>Capture</span><span id="scanCaptures">-</span></div>
+              <div class="row"><span>Platform angle</span><span id="scanAngle">-</span></div>
+              <div class="row"><span>Motor position</span><span id="scanMotor">-</span></div>
+              <div class="row"><span>Elapsed</span><span id="scanElapsed">-</span></div>
+              <div class="row"><span>Last point count</span><span id="scanPoints">-</span></div>
+              <div class="row"><span>Last error</span><span id="scanLastError">-</span></div>
             </div>
 
-            <div class="status-list">
-              <div class="status-row">
-                <span>Version</span>
-                <span id="versionStatus">-</span>
-              </div>
-
-              <div class="status-row">
-                <span>Running</span>
-                <span id="runningStatus">NO</span>
-              </div>
-
-              <div class="status-row">
-                <span>Frames Captured</span>
-                <span id="framesCaptured">0</span>
-              </div>
-
-              <div class="status-row">
-                <span>Motor Position</span>
-                <span id="motorPosition">0</span>
-              </div>
-
-              <div class="status-row">
-                <span>Last Capture</span>
-                <span id="lastCapture">None</span>
-              </div>
-
-              <div class="status-row">
-                <span>PLY Generated</span>
-                <span id="plyStatus">NO</span>
-              </div>
-
-              <div class="status-row">
-                <span>Last PLY</span>
-                <span id="lastPointCloud">None</span>
-              </div>
-
-              <div class="status-row">
-                <span>Last Scan</span>
-                <span id="lastScan">None</span>
-              </div>
-
-              <div class="status-row">
-                <span>Simulation Mode</span>
-                <span id="simulationStatus">ON</span>
-              </div>
-            </div>
+            <div id="scanIssues"></div>
           </section>
 
           <section class="card">
-            <div class="card-header">
+            <header>
               <div>
-                <h2>Scanner Controls</h2>
-                <p class="card-description">
-                  Start, stop and generate scanner output files.
-                </p>
+                <h2>Scan Controls</h2>
+                <p class="hint">Start and stop a full revolution scan.</p>
               </div>
-            </div>
+            </header>
 
             <div class="button-row">
-              <button class="btn-success" onclick="startScan()">
-                Start Scan
-              </button>
-
-              <button class="btn-danger" onclick="stopScan()">Stop Scan</button>
-
-              <button onclick="generatePly()">Generate PLY</button>
-
-              <button class="btn-purple" onclick="downloadLastPly()">
-                Download Last PLY
-              </button>
+              <button class="success" id="startScan">Start scan</button>
+              <button class="danger" id="stopScan">Stop scan</button>
             </div>
+
+            <p class="note">
+              A scan moves the platform through one revolution, capturing at evenly
+              spaced absolute motor positions, then triangulates the frames into a
+              point cloud.
+            </p>
           </section>
 
           <section class="card">
-            <div class="card-header">
+            <header>
               <div>
-                <h2>Config Panel</h2>
-                <p class="card-description">
-                  Safe runtime scanner settings. Camera controls remain
-                  disabled.
-                </p>
+                <h2>Hardware Status</h2>
+                <p class="hint">What the scanner can actually reach right now.</p>
               </div>
-            </div>
+            </header>
 
-            <div class="disabled-info">
-              Camera controls are disabled on notebook. Final camera tuning will
-              be tested on Raspberry Pi using the real scanner webcam.
-            </div>
-
-            <div class="settings-grid" style="margin-top: 16px">
-              <div>
-                <label for="scanStepsInput">Scan Steps</label>
-                <input id="scanStepsInput" type="number" min="1" step="1" />
-              </div>
-
-              <div>
-                <label for="stepDelayInput">Step Delay</label>
-                <input id="stepDelayInput" type="number" min="0" step="0.1" />
-              </div>
-
-              <div>
-                <label for="captureDelayInput">Capture Delay</label>
-                <input
-                  id="captureDelayInput"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                />
-              </div>
-            </div>
-
-            <div class="button-row">
-              <button onclick="saveSettings()">Save Settings</button>
-
-              <button class="btn-warning" onclick="toggleSimulationMode()">
-                Toggle Simulation Mode
-              </button>
+            <div class="kv">
+              <div class="row"><span>Camera</span><span id="hwCamera">-</span></div>
+              <div class="row"><span>Format</span><span id="hwCameraFormat">-</span></div>
+              <div class="row"><span>Motor</span><span id="hwMotor">-</span></div>
+              <div class="row"><span>Motor pins</span><span id="hwMotorPins">-</span></div>
+              <div class="row"><span>Laser</span><span id="hwLaser">-</span></div>
             </div>
           </section>
-        </aside>
+        </div>
+
+        <!-- ---------------------------------------------- configuration -->
+        <section class="card full-width">
+          <header>
+            <div>
+              <h2>Scan Configuration</h2>
+              <p class="hint">
+                Changing the mode rebuilds the hardware adapters. Settings are
+                validated on the server; an invalid value is rejected without
+                touching the running scanner.
+              </p>
+            </div>
+          </header>
+
+          <div class="field-grid">
+            <div>
+              <label for="modeSelect">Operating mode</label>
+              <select id="modeSelect">
+                <option value="simulation">simulation</option>
+                <option value="offline">offline</option>
+                <option value="physical">physical</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="captureCount">Captures per revolution</label>
+              <input id="captureCount" type="number" min="2" step="1" />
+            </div>
+
+            <div>
+              <label for="settleDelay">Settle delay (s)</label>
+              <input id="settleDelay" type="number" min="0" step="0.1" />
+            </div>
+
+            <div>
+              <label for="captureDelay">Capture delay (s)</label>
+              <input id="captureDelay" type="number" min="0" step="0.05" />
+            </div>
+
+            <div>
+              <label for="stepsPerRevolution">Motor steps per revolution</label>
+              <input id="stepsPerRevolution" type="number" min="8" step="1" />
+            </div>
+
+            <div>
+              <label for="stepDelay">Step delay (s)</label>
+              <input id="stepDelay" type="number" min="0.0005" step="0.0005" />
+            </div>
+
+            <div>
+              <label for="motorDirection">Motor direction</label>
+              <select id="motorDirection">
+                <option value="1">1</option>
+                <option value="-1">-1</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="cameraWidth">Camera width</label>
+              <input id="cameraWidth" type="number" min="64" step="1" />
+            </div>
+
+            <div>
+              <label for="cameraHeight">Camera height</label>
+              <input id="cameraHeight" type="number" min="64" step="1" />
+            </div>
+
+            <div>
+              <label for="cameraFourcc">Camera FOURCC</label>
+              <input id="cameraFourcc" type="text" maxlength="4" placeholder="MJPG" />
+            </div>
+
+            <div>
+              <label for="flushFrames">Flush frames before capture</label>
+              <input id="flushFrames" type="number" min="0" step="1" />
+            </div>
+
+            <div>
+              <label for="saturationMin">Detector min saturation</label>
+              <input id="saturationMin" type="number" min="0" max="255" step="1" />
+            </div>
+
+            <div>
+              <label for="valueMin">Detector min value</label>
+              <input id="valueMin" type="number" min="0" max="255" step="1" />
+            </div>
+
+            <div>
+              <label for="minConfidence">Detector min confidence</label>
+              <input id="minConfidence" type="number" min="0" max="1" step="0.01" />
+            </div>
+
+            <div>
+              <label for="voxelSize">Voxel size (mm)</label>
+              <input id="voxelSize" type="number" min="0" step="0.1" />
+            </div>
+          </div>
+
+          <div class="button-row" style="margin-top: 14px; align-items: center">
+            <label style="margin: 0; display: flex; gap: 6px; align-items: center">
+              <input type="checkbox" id="autoReconstruct" style="width: auto" />
+              Reconstruct automatically
+            </label>
+
+            <label style="margin: 0; display: flex; gap: 6px; align-items: center">
+              <input type="checkbox" id="saveRawFrames" style="width: auto" />
+              Keep raw frames
+            </label>
+
+            <button id="saveSettings">Save configuration</button>
+          </div>
+
+          <p class="note">
+            Keeping the raw frames is what makes offline re-reconstruction possible:
+            capture once, then adjust the detector or the calibration and rebuild the
+            cloud without turning the platform again.
+          </p>
+        </section>
+
+        <!-- ------------------------------------------------ calibration -->
+        <section class="card">
+          <header>
+            <div>
+              <h2>Calibration</h2>
+              <p class="hint">
+                Physical scanning stays locked until all three calibrations are
+                present and valid.
+              </p>
+            </div>
+          </header>
+
+          <div class="kv" id="calibrationStatus"></div>
+
+          <p class="note" id="calibrationNote"></p>
+          <div id="calibrationIssues"></div>
+
+          <h3 style="font-size: 13px; margin: 16px 0 8px">Checkerboard</h3>
+
+          <div class="field-grid">
+            <div>
+              <label for="boardColumns">Inner corners (columns)</label>
+              <input id="boardColumns" type="number" min="3" step="1" value="9" />
+            </div>
+            <div>
+              <label for="boardRows">Inner corners (rows)</label>
+              <input id="boardRows" type="number" min="3" step="1" value="6" />
+            </div>
+            <div>
+              <label for="boardSquare">Square size (mm)</label>
+              <input id="boardSquare" type="number" min="1" step="0.1" value="25" />
+            </div>
+            <div>
+              <label for="cameraFolder">Camera image folder</label>
+              <input id="cameraFolder" type="text" value="camera" />
+            </div>
+            <div>
+              <label for="laserFolder">Laser image folder</label>
+              <input id="laserFolder" type="text" value="laser" />
+            </div>
+          </div>
+
+          <div class="button-row" style="margin-top: 12px">
+            <button id="calibrateCamera">Calibrate camera</button>
+            <button id="calibrateLaser">Fit laser plane</button>
+          </div>
+
+          <h3 style="font-size: 13px; margin: 16px 0 8px">Turntable (manual)</h3>
+
+          <div class="field-grid">
+            <div>
+              <label for="axisOrigin">Axis origin, camera frame (x,y,z mm)</label>
+              <input id="axisOrigin" type="text" placeholder="0, 60, 320" />
+            </div>
+            <div>
+              <label for="axisDirection">Axis direction (x,y,z)</label>
+              <input id="axisDirection" type="text" placeholder="0, -1, 0" />
+            </div>
+            <div>
+              <label for="rotationDirection">Rotation direction</label>
+              <select id="rotationDirection">
+                <option value="1">1</option>
+                <option value="-1">-1</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="button-row" style="margin-top: 12px">
+            <button class="ghost" id="saveTurntable">Save turntable calibration</button>
+          </div>
+
+          <p class="note">
+            Put the checkerboard photographs in
+            <code>outputs/calibration/images/&lt;folder&gt;/</code>. For a measured axis,
+            <code>python -m tools.calibrate turntable</code> estimates it from a tracked
+            target instead of by hand.
+          </p>
+        </section>
+
+        <!-- --------------------------------------- laser diagnostics -->
+        <section class="card">
+          <header>
+            <div>
+              <h2>Laser Detection Diagnostics</h2>
+              <p class="hint">
+                Capture one frame and inspect exactly what the detector sees. This is
+                the tool for aiming the physical laser.
+              </p>
+            </div>
+          </header>
+
+          <div class="button-row">
+            <button class="warning" id="diagnoseLaser">Analyse current frame</button>
+          </div>
+
+          <div class="kv" style="margin-top: 12px">
+            <div class="row"><span>Accepted</span><span id="diagAccepted">-</span></div>
+            <div class="row"><span>Detected points</span><span id="diagPoints">-</span></div>
+            <div class="row"><span>Mean confidence</span><span id="diagConfidence">-</span></div>
+            <div class="row"><span>Mean thickness</span><span id="diagThickness">-</span></div>
+            <div class="row"><span>Reason</span><span id="diagReason">-</span></div>
+          </div>
+
+          <div class="diagnostics-grid" id="diagnosticsImages" style="margin-top: 12px"></div>
+        </section>
+
+        <!-- ---------------------------------------------- 3D viewer -->
+        <section class="card full-width">
+          <header>
+            <div>
+              <h2>3D Point Cloud Viewer</h2>
+              <p class="hint">
+                Drag to orbit, scroll to zoom, shift-drag or right-drag to pan.
+                Rendered with plain WebGL, so it works with no internet access.
+              </p>
+            </div>
+          </header>
+
+          <canvas class="viewer-canvas" id="viewerCanvas"></canvas>
+
+          <div class="viewer-controls">
+            <div>
+              <label for="colorMode">Colour</label>
+              <select id="colorMode">
+                <option value="height">height ramp</option>
+                <option value="rgb">captured RGB</option>
+                <option value="uniform">uniform</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="pointSize">Point size (<span id="pointSizeLabel">2.0</span>)</label>
+              <input id="pointSize" type="range" min="0.5" max="8" step="0.5" value="2" />
+            </div>
+
+            <div>
+              <label for="maxPoints">Max points sent to the browser</label>
+              <select id="maxPoints">
+                <option value="100000">100 000</option>
+                <option value="300000" selected>300 000</option>
+                <option value="800000">800 000</option>
+                <option value="2000000">2 000 000</option>
+              </select>
+            </div>
+
+            <div style="flex: 0 0 auto">
+              <label style="display: flex; gap: 6px; align-items: center; margin-top: 18px">
+                <input type="checkbox" id="showGrid" checked style="width: auto" />
+                Axes and grid
+              </label>
+            </div>
+
+            <div style="flex: 0 0 auto">
+              <button class="ghost" id="resetView" style="margin-top: 14px">Reset camera</button>
+            </div>
+          </div>
+
+          <p class="note" id="viewerMessage">
+            Select a point cloud from the list below or from a scan session.
+          </p>
+        </section>
+
+        <!-- ------------------------------------------- scan sessions -->
+        <section class="card full-width">
+          <header>
+            <div>
+              <h2>Scan Sessions</h2>
+              <p class="hint">Every acquisition, with its real status and metadata.</p>
+            </div>
+          </header>
+
+          <div id="sessionsTable"></div>
+        </section>
+
+        <section class="card full-width" id="sessionDetail" hidden>
+          <header>
+            <div>
+              <h2>Session Details</h2>
+              <p class="hint">
+                Reconstruction statistics and the frames that produced them.
+              </p>
+            </div>
+
+            <button class="violet" id="reconstructSession">Reconstruct again</button>
+          </header>
+
+          <div class="field-grid">
+            <div class="kv">
+              <div class="row"><span>Session</span><span id="detailId">-</span></div>
+              <div class="row"><span>Status</span><span id="detailStatus">-</span></div>
+              <div class="row"><span>Mode</span><span id="detailMode">-</span></div>
+              <div class="row"><span>Created</span><span id="detailCreated">-</span></div>
+              <div class="row"><span>Finished</span><span id="detailFinished">-</span></div>
+            </div>
+
+            <div class="kv">
+              <div class="row"><span>Captures</span><span id="detailCaptures">-</span></div>
+              <div class="row"><span>Frames used</span><span id="detailFrames">-</span></div>
+              <div class="row"><span>Laser pixels</span><span id="detailLaserPixels">-</span></div>
+              <div class="row"><span>Points kept</span><span id="detailPoints">-</span></div>
+              <div class="row"><span>Rejections</span><span id="detailRejected">-</span></div>
+              <div class="row"><span>Reconstruction time</span><span id="detailTiming">-</span></div>
+              <div class="row"><span>Last error</span><span id="detailErrors">-</span></div>
+            </div>
+          </div>
+
+          <h3 style="font-size: 13px; margin: 16px 0 8px">Point clouds</h3>
+          <div id="sessionClouds"></div>
+
+          <h3 style="font-size: 13px; margin: 16px 0 8px">Captured frames</h3>
+          <div class="thumbs" id="sessionFrames"></div>
+        </section>
+
+        <!-- --------------------------------------- point cloud files -->
+        <section class="card full-width">
+          <header>
+            <div>
+              <h2>Point Cloud Management</h2>
+              <p class="hint">
+                Clouds from every session plus any generated outside a session.
+              </p>
+            </div>
+          </header>
+
+          <div id="cloudsTable"></div>
+        </section>
+
+        <!-- ------------------------------------------------- logs -->
+        <section class="card full-width">
+          <header>
+            <div>
+              <h2>System Logs</h2>
+              <p class="hint">
+                Newest first. The same records go to
+                <code>outputs/logs/scanner.log</code>.
+              </p>
+            </div>
+          </header>
+
+          <div id="logs"></div>
+        </section>
       </div>
-
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>Generated Point Clouds</h2>
-            <p class="card-description">
-              Generated PLY files available for download or deletion.
-            </p>
-          </div>
-        </div>
-
-        <div id="pointCloudsContainer"></div>
-      </section>
-
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>Scan Sessions</h2>
-            <p class="card-description">
-              Scan sessions generated by the scanner pipeline.
-            </p>
-          </div>
-        </div>
-
-        <div id="scanSessionsContainer"></div>
-      </section>
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>Future Modules</h2>
-            <p class="card-description">
-              Planned modules for the next development stages of the Scanner3D
-              system.
-            </p>
-          </div>
-        </div>
-
-        <div class="modules-grid">
-          <div class="module-card">
-            <div class="module-title">Camera Calibration</div>
-            <div class="module-description">
-              Future module for camera matrix, distortion correction and
-              calibration files.
-            </div>
-            <span class="module-badge module-planned">Planned</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">Laser Line Detection</div>
-            <div class="module-description">
-              Extraction and filtering of the red laser line from captured
-              frames.
-            </div>
-            <span class="module-badge module-planned">Planned</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">Real Point Cloud Reconstruction</div>
-            <div class="module-description">
-              Conversion of laser line data and platform angles into real 3D
-              points.
-            </div>
-            <span class="module-badge module-planned">Planned</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">3D Viewer</div>
-            <div class="module-description">
-              Future browser-based viewer for previewing generated PLY point
-              clouds.
-            </div>
-            <span class="module-badge module-future">Future</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">Mesh Generation</div>
-            <div class="module-description">
-              Future conversion from point cloud data into a connected 3D
-              surface mesh.
-            </div>
-            <span class="module-badge module-future">Future</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">GPIO Motor Control</div>
-            <div class="module-description">
-              Real Raspberry Pi motor control for the scanner turntable.
-            </div>
-            <span class="module-badge module-disabled">Hardware Stage</span>
-          </div>
-        </div>
-      </section>
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>System Logs</h2>
-            <p class="card-description">
-              Latest scanner events and backend messages.
-            </p>
-          </div>
-        </div>
-
-        <div id="logsContainer"></div>
-      </section>
     </main>
 
-    <script>
-      function showMessage(message, type = "info") {
-        const messageBox = document.getElementById("systemMessage");
+    <div class="toast" id="toast"></div>
 
-        messageBox.textContent = message;
-        messageBox.className = "message show " + type;
-      }
-
-      async function requestJson(url, options = {}) {
-        const response = await fetch(url, options);
-
-        let data = {};
-
-        try {
-          data = await response.json();
-        } catch (error) {
-          data = {};
-        }
-
-        if (!response.ok) {
-          const message = data.message || data.error || "Request failed.";
-
-          throw new Error(message);
-        }
-
-        return data;
-      }
-
-      async function resetCamera() {
-        try {
-          const result = await requestJson("/reset-camera", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Camera reset requested.", "info");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function captureImage() {
-        try {
-          const result = await requestJson("/capture", {
-            method: "POST",
-          });
-
-          if (result.success) {
-            const container = document.getElementById("capturesContainer");
-
-            const image = document.createElement("img");
-
-            image.src = "/captures/" + result.file;
-            image.className = "thumbnail";
-            image.alt = "Captured scanner frame";
-
-            container.prepend(image);
-
-            showMessage("Image captured successfully.", "success");
-          }
-
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function clearCaptures() {
-        try {
-          const result = await requestJson("/clear-captures", {
-            method: "POST",
-          });
-
-          document.getElementById("capturesContainer").innerHTML = "";
-
-          showMessage(result.message || "Captures cleared.", "success");
-
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function startScan() {
-        try {
-          const result = await requestJson("/start-scan", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Scan started.", "success");
-
-          updateLogs();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "warning");
-        }
-      }
-
-      async function stopScan() {
-        try {
-          const result = await requestJson("/stop-scan", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Stop requested.", "warning");
-
-          updateLogs();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function generatePly() {
-        try {
-          const result = await requestJson("/generate-ply", {
-            method: "POST",
-          });
-
-          showMessage(
-            result.message || "PLY generated successfully.",
-            "success",
-          );
-
-          updateLogs();
-          updateStatus();
-          updatePointClouds();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function downloadLastPly() {
-        window.location.href = "/download-ply";
-      }
-
-      async function deletePly(filename) {
-        try {
-          const result = await requestJson(
-            "/delete-ply/" + encodeURIComponent(filename),
-            {
-              method: "POST",
-            },
-          );
-
-          showMessage(result.message || "PLY deleted successfully.", "success");
-
-          updateLogs();
-          updateStatus();
-          updatePointClouds();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function updateLogs() {
-        try {
-          const response = await fetch("/logs");
-          const result = await response.json();
-
-          const logs = result.logs ?? result.data?.logs ?? [];
-
-          const container = document.getElementById("logsContainer");
-
-          container.innerHTML = "";
-
-          logs.forEach((log) => {
-            const line = document.createElement("div");
-
-            line.className = "log";
-            line.textContent = log;
-
-            container.appendChild(line);
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      function updateStatusBadge(status) {
-        const badge = document.getElementById("scannerBadge");
-
-        const statusText = status || "IDLE";
-
-        badge.textContent = statusText;
-
-        badge.className = "status-badge";
-
-        if (statusText === "SCANNING") {
-          badge.classList.add("status-scanning");
-        } else if (statusText === "COMPLETED") {
-          badge.classList.add("status-completed");
-        } else if (statusText === "ERROR") {
-          badge.classList.add("status-error");
-        } else {
-          badge.classList.add("status-idle");
-        }
-      }
-
-      async function updateStatus() {
-        try {
-          const response = await fetch("/status");
-          const data = await response.json();
-
-          document.getElementById("versionStatus").textContent =
-            data.scanner_version ?? data.version ?? "0.1";
-
-          document.getElementById("runningStatus").textContent = data.running
-            ? "YES"
-            : "NO";
-
-          document.getElementById("framesCaptured").textContent =
-            data.frames_captured ?? 0;
-
-          document.getElementById("motorPosition").textContent =
-            data.motor_position ?? 0;
-
-          document.getElementById("lastCapture").textContent =
-            data.last_capture ?? "None";
-
-          document.getElementById("plyStatus").textContent =
-            data.point_cloud_generated ? "YES" : "NO";
-
-          document.getElementById("lastPointCloud").textContent =
-            data.last_point_cloud ?? "None";
-
-          document.getElementById("lastScan").textContent =
-            data.last_scan_time ?? data.last_scan ?? "None";
-
-          const simulationText = data.simulation_mode ? "ON" : "OFF";
-
-          document.getElementById("simulationStatus").textContent =
-            simulationText;
-
-          document.getElementById("environmentBadge").textContent =
-            "Simulation Mode: " + simulationText;
-
-          let badgeStatus = "IDLE";
-
-          if (data.last_error) {
-            badgeStatus = "ERROR";
-          } else if (data.running) {
-            badgeStatus = "SCANNING";
-          } else if (data.point_cloud_generated) {
-            badgeStatus = "COMPLETED";
-          }
-
-          updateStatusBadge(badgeStatus);
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      async function updatePointClouds() {
-        try {
-          const response = await fetch("/point-clouds");
-          const result = await response.json();
-
-          const files = result.files ?? result.data?.files ?? [];
-
-          const container = document.getElementById("pointCloudsContainer");
-
-          container.innerHTML = "";
-
-          if (!files || files.length === 0) {
-            const empty = document.createElement("div");
-
-            empty.className = "empty-state";
-            empty.textContent = "No point cloud files generated yet.";
-
-            container.appendChild(empty);
-
-            return;
-          }
-
-          const table = document.createElement("table");
-
-          table.innerHTML = `
-      <thead>
-        <tr>
-          <th>File Name</th>
-          <th>Size</th>
-          <th>Modified</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
-
-          const tbody = table.querySelector("tbody");
-
-          files.forEach((file) => {
-            const filename = typeof file === "string" ? file : file.name;
-            const size =
-              typeof file === "string"
-                ? "-"
-                : (file.size_kb ?? file.size ?? "-") + " KB";
-
-            const modified =
-              typeof file === "string" ? "-" : (file.modified_at ?? "-");
-
-            const row = document.createElement("tr");
-
-            row.innerHTML = `
-        <td>${filename}</td>
-        <td>${size}</td>
-        <td>${modified}</td>
-        <td>
-          <div class="table-actions">
-            <button class="small-button" data-action="download">
-              Download
-            </button>
-            <button class="small-button btn-danger" data-action="delete">
-              Delete
-            </button>
-          </div>
-        </td>
-      `;
-
-            row
-              .querySelector('[data-action="download"]')
-              .addEventListener("click", () => {
-                window.location.href =
-                  "/download-ply/" + encodeURIComponent(filename);
-              });
-
-            row
-              .querySelector('[data-action="delete"]')
-              .addEventListener("click", () => {
-                deletePly(filename);
-              });
-
-            tbody.appendChild(row);
-          });
-
-          container.appendChild(table);
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      async function loadSettings() {
-        try {
-          const response = await fetch("/settings");
-          const result = await response.json();
-
-          const settings = result.settings ?? result.data?.settings ?? result;
-
-          document.getElementById("scanStepsInput").value =
-            settings.scan_steps ?? 10;
-
-          document.getElementById("stepDelayInput").value =
-            settings.step_delay ?? 1.0;
-
-          document.getElementById("captureDelayInput").value =
-            settings.capture_delay ?? 0.5;
-
-          const simulationText = settings.simulation_mode ? "ON" : "OFF";
-
-          document.getElementById("environmentBadge").textContent =
-            "Simulation Mode: " + simulationText;
-        } catch (error) {
-          showMessage("Could not load settings.", "error");
-        }
-      }
-
-      async function saveSettings() {
-        const payload = {
-          scan_steps: document.getElementById("scanStepsInput").value,
-          step_delay: document.getElementById("stepDelayInput").value,
-          capture_delay: document.getElementById("captureDelayInput").value,
-        };
-
-        try {
-          const result = await requestJson("/settings", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-
-          showMessage(result.message || "Settings updated.", "success");
-
-          loadSettings();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function toggleSimulationMode() {
-        try {
-          const result = await requestJson("/simulation-mode", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Simulation mode updated.", "info");
-
-          loadSettings();
-          updateStatus();
-          updateLogs();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-      async function updateScanSessions() {
-        try {
-          const response = await fetch("/scan-sessions");
-          const result = await response.json();
-
-          const sessions = result.sessions ?? result.data?.sessions ?? [];
-
-          const container = document.getElementById("scanSessionsContainer");
-
-          container.innerHTML = "";
-
-          if (!sessions || sessions.length === 0) {
-            const empty = document.createElement("div");
-
-            empty.className = "empty-state";
-            empty.textContent = "No scan sessions created yet.";
-
-            container.appendChild(empty);
-
-            return;
-          }
-
-          sessions.forEach((session) => {
-            const div = document.createElement("div");
-            div.className = "session-row";
-
-            const title = document.createElement("div");
-            title.className = "session-title";
-            title.textContent = session.session_id;
-
-            const status = document.createElement("div");
-            status.className = "session-info";
-            status.textContent = "Status: " + session.status;
-
-            const created = document.createElement("div");
-            created.className = "session-info";
-            created.textContent = "Created at: " + session.created_at;
-
-            const finished = document.createElement("div");
-            finished.className = "session-info";
-            finished.textContent =
-              "Finished at: " + (session.finished_at ?? "Not finished");
-
-            const captures = document.createElement("div");
-            captures.className = "session-info";
-            captures.textContent =
-              "Captures: " + (session.captures?.length ?? 0);
-
-            const pointClouds = document.createElement("div");
-            pointClouds.className = "session-info";
-            pointClouds.textContent =
-              "Point Clouds: " + (session.point_clouds?.length ?? 0);
-
-            div.appendChild(title);
-            div.appendChild(status);
-            div.appendChild(created);
-            div.appendChild(finished);
-            div.appendChild(captures);
-            div.appendChild(pointClouds);
-
-            container.appendChild(div);
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      setInterval(() => {
-        updateLogs();
-        updateStatus();
-        updatePointClouds();
-        updateScanSessions();
-      }, 1000);
-
-      loadSettings();
-      updateLogs();
-      updateStatus();
-      updatePointClouds();
-      updateScanSessions();
-    </script>
+    <script src="/static/js/viewer.js"></script>
+    <script src="/static/js/dashboard.js"></script>
   </body>
 </html>
