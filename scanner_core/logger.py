@@ -1,20 +1,15 @@
+from collections import deque
 from datetime import datetime
-
+from threading import Lock
 from scanner_core.config import MAX_LOG_LINES
 
-
-logs = []
-
+_logs = deque(maxlen=MAX_LOG_LINES)
+_lock = Lock()
 
 def add_log(message):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    line = f"[{timestamp}] {message}"
-
-    logs.insert(0, line)
-
-    if len(logs) > MAX_LOG_LINES:
-        logs.pop()
-
+    with _lock:
+        _logs.appendleft(f"[{datetime.now():%H:%M:%S}] {message}")
 
 def get_logs():
-    return logs.copy()
+    with _lock:
+        return list(_logs)

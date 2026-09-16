@@ -669,7 +669,7 @@
 
               <button class="btn-danger" onclick="stopScan()">Stop Scan</button>
 
-              <button onclick="generatePly()">Generate PLY</button>
+              <button onclick="generatePly()">Reprocess Last Session</button>
 
               <button class="btn-purple" onclick="downloadLastPly()">
                 Download Last PLY
@@ -695,12 +695,12 @@
 
             <div class="settings-grid" style="margin-top: 16px">
               <div>
-                <label for="scanStepsInput">Scan Steps</label>
+                <label for="scanStepsInput">Capture Positions</label>
                 <input id="scanStepsInput" type="number" min="1" step="1" />
               </div>
 
               <div>
-                <label for="stepDelayInput">Step Delay</label>
+                <label for="stepDelayInput">Settling Time (s)</label>
                 <input id="stepDelayInput" type="number" min="0" step="0.1" />
               </div>
 
@@ -754,9 +754,9 @@
       <section class="card" style="margin-top: 24px">
         <div class="card-header">
           <div>
-            <h2>Future Modules</h2>
+            <h2>Scanner Modules</h2>
             <p class="card-description">
-              Planned modules for the next development stages of the Scanner3D
+              Calibration and reconstruction tools available in the Scanner3D
               system.
             </p>
           </div>
@@ -766,10 +766,10 @@
           <div class="module-card">
             <div class="module-title">Camera Calibration</div>
             <div class="module-description">
-              Future module for camera matrix, distortion correction and
+              Executable checkerboard calibration, distortion correction and
               calibration files.
             </div>
-            <span class="module-badge module-planned">Planned</span>
+            <span class="module-badge module-planned">Implemented</span>
           </div>
 
           <div class="module-card">
@@ -778,7 +778,7 @@
               Extraction and filtering of the red laser line from captured
               frames.
             </div>
-            <span class="module-badge module-planned">Planned</span>
+            <span class="module-badge module-planned">Implemented</span>
           </div>
 
           <div class="module-card">
@@ -787,13 +787,13 @@
               Conversion of laser line data and platform angles into real 3D
               points.
             </div>
-            <span class="module-badge module-planned">Planned</span>
+            <span class="module-badge module-planned">Implemented</span>
           </div>
 
           <div class="module-card">
             <div class="module-title">3D Viewer</div>
             <div class="module-description">
-              Future browser-based viewer for previewing generated PLY point
+              Session previews from three projections of reconstructed point
               clouds.
             </div>
             <span class="module-badge module-future">Future</span>
@@ -831,490 +831,6 @@
       </section>
     </main>
 
-    <script>
-      function showMessage(message, type = "info") {
-        const messageBox = document.getElementById("systemMessage");
-
-        messageBox.textContent = message;
-        messageBox.className = "message show " + type;
-      }
-
-      async function requestJson(url, options = {}) {
-        const response = await fetch(url, options);
-
-        let data = {};
-
-        try {
-          data = await response.json();
-        } catch (error) {
-          data = {};
-        }
-
-        if (!response.ok) {
-          const message = data.message || data.error || "Request failed.";
-
-          throw new Error(message);
-        }
-
-        return data;
-      }
-
-      async function resetCamera() {
-        try {
-          const result = await requestJson("/reset-camera", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Camera reset requested.", "info");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function captureImage() {
-        try {
-          const result = await requestJson("/capture", {
-            method: "POST",
-          });
-
-          if (result.success) {
-            const container = document.getElementById("capturesContainer");
-
-            const image = document.createElement("img");
-
-            image.src = "/captures/" + result.file;
-            image.className = "thumbnail";
-            image.alt = "Captured scanner frame";
-
-            container.prepend(image);
-
-            showMessage("Image captured successfully.", "success");
-          }
-
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function clearCaptures() {
-        try {
-          const result = await requestJson("/clear-captures", {
-            method: "POST",
-          });
-
-          document.getElementById("capturesContainer").innerHTML = "";
-
-          showMessage(result.message || "Captures cleared.", "success");
-
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function startScan() {
-        try {
-          const result = await requestJson("/start-scan", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Scan started.", "success");
-
-          updateLogs();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "warning");
-        }
-      }
-
-      async function stopScan() {
-        try {
-          const result = await requestJson("/stop-scan", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Stop requested.", "warning");
-
-          updateLogs();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function generatePly() {
-        try {
-          const result = await requestJson("/generate-ply", {
-            method: "POST",
-          });
-
-          showMessage(
-            result.message || "PLY generated successfully.",
-            "success",
-          );
-
-          updateLogs();
-          updateStatus();
-          updatePointClouds();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      function downloadLastPly() {
-        window.location.href = "/download-ply";
-      }
-
-      async function deletePly(filename) {
-        try {
-          const result = await requestJson(
-            "/delete-ply/" + encodeURIComponent(filename),
-            {
-              method: "POST",
-            },
-          );
-
-          showMessage(result.message || "PLY deleted successfully.", "success");
-
-          updateLogs();
-          updateStatus();
-          updatePointClouds();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function updateLogs() {
-        try {
-          const response = await fetch("/logs");
-          const result = await response.json();
-
-          const logs = result.logs ?? result.data?.logs ?? [];
-
-          const container = document.getElementById("logsContainer");
-
-          container.innerHTML = "";
-
-          logs.forEach((log) => {
-            const line = document.createElement("div");
-
-            line.className = "log";
-            line.textContent = log;
-
-            container.appendChild(line);
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      function updateStatusBadge(status) {
-        const badge = document.getElementById("scannerBadge");
-
-        const statusText = status || "IDLE";
-
-        badge.textContent = statusText;
-
-        badge.className = "status-badge";
-
-        if (statusText === "SCANNING") {
-          badge.classList.add("status-scanning");
-        } else if (statusText === "COMPLETED") {
-          badge.classList.add("status-completed");
-        } else if (statusText === "ERROR") {
-          badge.classList.add("status-error");
-        } else {
-          badge.classList.add("status-idle");
-        }
-      }
-
-      async function updateStatus() {
-        try {
-          const response = await fetch("/status");
-          const data = await response.json();
-
-          document.getElementById("versionStatus").textContent =
-            data.scanner_version ?? data.version ?? "0.1";
-
-          document.getElementById("runningStatus").textContent = data.running
-            ? "YES"
-            : "NO";
-
-          document.getElementById("framesCaptured").textContent =
-            data.frames_captured ?? 0;
-
-          document.getElementById("motorPosition").textContent =
-            data.motor_position ?? 0;
-
-          document.getElementById("lastCapture").textContent =
-            data.last_capture ?? "None";
-
-          document.getElementById("plyStatus").textContent =
-            data.point_cloud_generated ? "YES" : "NO";
-
-          document.getElementById("lastPointCloud").textContent =
-            data.last_point_cloud ?? "None";
-
-          document.getElementById("lastScan").textContent =
-            data.last_scan_time ?? data.last_scan ?? "None";
-
-          const simulationText = data.simulation_mode ? "ON" : "OFF";
-
-          document.getElementById("simulationStatus").textContent =
-            simulationText;
-
-          document.getElementById("environmentBadge").textContent =
-            "Simulation Mode: " + simulationText;
-
-          let badgeStatus = "IDLE";
-
-          if (data.last_error) {
-            badgeStatus = "ERROR";
-          } else if (data.running) {
-            badgeStatus = "SCANNING";
-          } else if (data.point_cloud_generated) {
-            badgeStatus = "COMPLETED";
-          }
-
-          updateStatusBadge(badgeStatus);
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      async function updatePointClouds() {
-        try {
-          const response = await fetch("/point-clouds");
-          const result = await response.json();
-
-          const files = result.files ?? result.data?.files ?? [];
-
-          const container = document.getElementById("pointCloudsContainer");
-
-          container.innerHTML = "";
-
-          if (!files || files.length === 0) {
-            const empty = document.createElement("div");
-
-            empty.className = "empty-state";
-            empty.textContent = "No point cloud files generated yet.";
-
-            container.appendChild(empty);
-
-            return;
-          }
-
-          const table = document.createElement("table");
-
-          table.innerHTML = `
-      <thead>
-        <tr>
-          <th>File Name</th>
-          <th>Size</th>
-          <th>Modified</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
-
-          const tbody = table.querySelector("tbody");
-
-          files.forEach((file) => {
-            const filename = typeof file === "string" ? file : file.name;
-            const size =
-              typeof file === "string"
-                ? "-"
-                : (file.size_kb ?? file.size ?? "-") + " KB";
-
-            const modified =
-              typeof file === "string" ? "-" : (file.modified_at ?? "-");
-
-            const row = document.createElement("tr");
-
-            row.innerHTML = `
-        <td>${filename}</td>
-        <td>${size}</td>
-        <td>${modified}</td>
-        <td>
-          <div class="table-actions">
-            <button class="small-button" data-action="download">
-              Download
-            </button>
-            <button class="small-button btn-danger" data-action="delete">
-              Delete
-            </button>
-          </div>
-        </td>
-      `;
-
-            row
-              .querySelector('[data-action="download"]')
-              .addEventListener("click", () => {
-                window.location.href =
-                  "/download-ply/" + encodeURIComponent(filename);
-              });
-
-            row
-              .querySelector('[data-action="delete"]')
-              .addEventListener("click", () => {
-                deletePly(filename);
-              });
-
-            tbody.appendChild(row);
-          });
-
-          container.appendChild(table);
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      async function loadSettings() {
-        try {
-          const response = await fetch("/settings");
-          const result = await response.json();
-
-          const settings = result.settings ?? result.data?.settings ?? result;
-
-          document.getElementById("scanStepsInput").value =
-            settings.scan_steps ?? 10;
-
-          document.getElementById("stepDelayInput").value =
-            settings.step_delay ?? 1.0;
-
-          document.getElementById("captureDelayInput").value =
-            settings.capture_delay ?? 0.5;
-
-          const simulationText = settings.simulation_mode ? "ON" : "OFF";
-
-          document.getElementById("environmentBadge").textContent =
-            "Simulation Mode: " + simulationText;
-        } catch (error) {
-          showMessage("Could not load settings.", "error");
-        }
-      }
-
-      async function saveSettings() {
-        const payload = {
-          scan_steps: document.getElementById("scanStepsInput").value,
-          step_delay: document.getElementById("stepDelayInput").value,
-          capture_delay: document.getElementById("captureDelayInput").value,
-        };
-
-        try {
-          const result = await requestJson("/settings", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-
-          showMessage(result.message || "Settings updated.", "success");
-
-          loadSettings();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function toggleSimulationMode() {
-        try {
-          const result = await requestJson("/simulation-mode", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Simulation mode updated.", "info");
-
-          loadSettings();
-          updateStatus();
-          updateLogs();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-      async function updateScanSessions() {
-        try {
-          const response = await fetch("/scan-sessions");
-          const result = await response.json();
-
-          const sessions = result.sessions ?? result.data?.sessions ?? [];
-
-          const container = document.getElementById("scanSessionsContainer");
-
-          container.innerHTML = "";
-
-          if (!sessions || sessions.length === 0) {
-            const empty = document.createElement("div");
-
-            empty.className = "empty-state";
-            empty.textContent = "No scan sessions created yet.";
-
-            container.appendChild(empty);
-
-            return;
-          }
-
-          sessions.forEach((session) => {
-            const div = document.createElement("div");
-            div.className = "session-row";
-
-            const title = document.createElement("div");
-            title.className = "session-title";
-            title.textContent = session.session_id;
-
-            const status = document.createElement("div");
-            status.className = "session-info";
-            status.textContent = "Status: " + session.status;
-
-            const created = document.createElement("div");
-            created.className = "session-info";
-            created.textContent = "Created at: " + session.created_at;
-
-            const finished = document.createElement("div");
-            finished.className = "session-info";
-            finished.textContent =
-              "Finished at: " + (session.finished_at ?? "Not finished");
-
-            const captures = document.createElement("div");
-            captures.className = "session-info";
-            captures.textContent =
-              "Captures: " + (session.captures?.length ?? 0);
-
-            const pointClouds = document.createElement("div");
-            pointClouds.className = "session-info";
-            pointClouds.textContent =
-              "Point Clouds: " + (session.point_clouds?.length ?? 0);
-
-            div.appendChild(title);
-            div.appendChild(status);
-            div.appendChild(created);
-            div.appendChild(finished);
-            div.appendChild(captures);
-            div.appendChild(pointClouds);
-
-            container.appendChild(div);
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      setInterval(() => {
-        updateLogs();
-        updateStatus();
-        updatePointClouds();
-        updateScanSessions();
-      }, 1000);
-
-      loadSettings();
-      updateLogs();
-      updateStatus();
-      updatePointClouds();
-      updateScanSessions();
-    </script>
+    <script src="/static/scanner.js"></script>
   </body>
 </html>

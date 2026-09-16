@@ -1,20 +1,18 @@
-APP_VERSION = "0.2.0"
+"""Project paths are independent of the shell's working directory."""
+import os
+from pathlib import Path
 
-SCAN_STEPS = 10
-STEP_DELAY = 1.0
-CAPTURE_DELAY = 0.5
-
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_ROOT = Path(os.environ.get("SCANNER_OUTPUT_ROOT", PROJECT_ROOT / "outputs")).resolve()
+APP_VERSION = "0.3.0"
+SCAN_STEPS = 36
+STEP_DELAY = 0.1
+CAPTURE_DELAY = 0.05
 CAMERA_INDEX = 0
-
-OUTPUT_FOLDER = "outputs/captures"
-
-POINT_CLOUD_FOLDER = "outputs/point_clouds"
+OUTPUT_FOLDER = str(OUTPUT_ROOT / "captures")
+POINT_CLOUD_FOLDER = str(OUTPUT_ROOT / "point_clouds")
+SCANS_FOLDER = str(OUTPUT_ROOT / "scans")
 POINT_CLOUD_FILE = "scan_result.ply"
-
 LASER_THRESHOLD = 180
-
 MAX_LOG_LINES = 100
-
 SIMULATION_MODE_DEFAULT = True
-
-SCANS_FOLDER = "outputs/scans"
