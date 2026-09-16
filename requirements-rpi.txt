@@ -1,0 +1,18 @@
+# Raspberry Pi OS (Debian) dependencies.
+#
+# Prefer the distribution packages over pip on a Pi: the piwheels/pip build of
+# opencv-python can take hours to compile on a Pi 3 and pulls a second copy of
+# NumPy. Install these with apt instead:
+#
+#   sudo apt update
+#   sudo apt install python3-opencv python3-numpy python3-flask python3-gpiozero
+#
+# Then create the virtual environment with access to them:
+#
+#   python3 -m venv --system-site-packages .venv
+#   source .venv/bin/activate
+#   pip install -r requirements-rpi.txt
+#
+# Only the packages that apt does not provide are listed here.
+
+gpiozero>=2.0 ; platform_machine != "x86_64"
