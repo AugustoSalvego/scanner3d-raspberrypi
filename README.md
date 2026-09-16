@@ -1,169 +1,633 @@
 # Scanner3D Raspberry Pi
 
-Scanner experimental com Python, Flask, OpenCV e NumPy, preparado para Raspberry Pi 3, webcam USB Fifine K420, laser vermelho de linha e plataforma com 28BYJ-48 / ULN2003.
+Low-cost 3D laser scanner platform built with **Python**, **Flask**, **OpenCV** and **Raspberry Pi**.
 
-O software reconstrói pontos a partir da linha observada nas imagens, com intrínsecos da câmera, plano do laser e eixo da plataforma calibrados. A validade de um PLY não comprova a forma nem a precisão física: inspecione as máscaras, sobreposições, dimensões e prévias, e compare com um objeto de medidas conhecidas.
+This project aims to develop an experimental 3D scanner capable of capturing images from a rotating platform, organizing scan sessions, generating point cloud files and exporting results in `.ply` format.
 
-## Modos e estado de validação
+The project is being developed as a technical portfolio project and as part of an academic research and development path.
 
-- **Simulação**: imagens de um objeto matemático conhecido, identificadas como `synthetic`, sem webcam ou GPIO. Usa o mesmo detector e triangulador do processamento físico.
-- **Offline**: imagens existentes, calibração e manifesto com ângulos explícitos. Nenhuma volta é inferida pela quantidade de arquivos.
-- **Físico**: comanda meios passos, espera estabilização, descarta frames antigos, captura e reconstrói. Falhas não provocam fallback para simulação.
+---
 
-A implementação é testável sem hardware. A execução física e a precisão do conjunto só podem ser confirmadas com a montagem, suas calibrações e imagens reais. Veja o registro desta execução em [docs/validation.md](docs/validation.md).
+## Current Project Status
 
-## Instalação no Windows
+The software is currently in a functional prototype stage.
 
-Python 3.10 ou superior; esta execução utiliza Python 3.12.2. Na raiz do projeto:
+The current version already includes:
 
-```powershell
+- Web dashboard
+- Live camera preview
+- Manual image capture
+- Capture management
+- Scan pipeline
+- Simulation mode
+- Runtime scan settings
+- Scanner status dashboard
+- System logs
+- Scan session organization
+- Metadata generation
+- Simulated point cloud generation
+- PLY export
+- PLY download
+- Point cloud file listing
+- Point cloud deletion
+- API response standardization
+- Calibration planning
+- Future 3D viewer planning
+
+The physical scanner prototype is planned to run with:
+
+- Raspberry Pi
+- USB webcam
+- Red laser
+- Rotating platform
+- Stepper motor
+- Motor driver
+- External power supply
+
+At the current stage, the software can run on a PC/notebook in simulation mode before being integrated again with the physical Raspberry Pi scanner.
+
+---
+
+## Main Features
+
+### Web Interface
+
+- Live camera stream
+- Scanner controls
+- Capture test image
+- Clear captures
+- Start scan
+- Stop scan
+- Generate PLY
+- Download last PLY
+- List generated point clouds
+- Download individual PLY files
+- Delete PLY files
+- View scanner status
+- View system logs
+- Manage runtime settings
+- Toggle simulation mode
+- View scan sessions
+- View planned future modules
+
+### Scanner Core
+
+- Camera abstraction
+- Motor abstraction
+- Scan pipeline
+- Runtime settings
+- Scanner state
+- Logger
+- Point cloud generation
+- Scan session management
+- Calibration status structure
+- 3D viewer status structure
+
+### Documentation
+
+- API documentation
+- Software architecture
+- Calibration plan
+- 3D viewer plan
+- Hardware integration plan
+
+---
+
+## Technologies
+
+- Python
+- Flask
+- OpenCV
+- NumPy
+- HTML
+- CSS
+- JavaScript
+- Raspberry Pi
+- Git
+- GitHub
+
+---
+
+## Project Structure
+
+```text
+scanner3d-raspberrypi/
+│
+├── scanner_core/
+│   ├── __init__.py
+│   ├── calibration.py
+│   ├── camera.py
+│   ├── config.py
+│   ├── logger.py
+│   ├── motor.py
+│   ├── pipeline.py
+│   ├── point_cloud.py
+│   ├── runtime_settings.py
+│   ├── session.py
+│   ├── state.py
+│   ├── status.py
+│   └── viewer.py
+│
+├── web_interface/
+│   ├── __init__.py
+│   ├── api_response.py
+│   ├── app.py
+│   └── templates/
+│       └── index.html
+│
+├── tools/
+│   └── development and hardware test scripts
+│
+├── docs/
+│   ├── api.md
+│   ├── software-architecture.md
+│   ├── calibration-plan.md
+│   ├── 3d-viewer-plan.md
+│   └── hardware-integration-plan.md
+│
+├── outputs/
+│   ├── calibration/
+│   ├── captures/
+│   ├── point_clouds/
+│   └── scans/
+│
+├── README.md
+├── requirements.txt
+└── .gitignore
+```
+
+---
+
+## Important Note About `outputs/`
+
+The `outputs/` folder is used for generated files, such as:
+
+- Captured images
+- Point cloud files
+- Scan session folders
+- Metadata files
+- Calibration files
+
+These files are local runtime outputs and should not be committed to GitHub.
+
+The repository should store the source code and documentation, not generated scan data.
+
+---
+
+## How to Run on Windows
+
+Clone the repository:
+
+```bash
+git clone https://github.com/AugustoSalvego/scanner3d-raspberrypi.git
+```
+
+Enter the project folder:
+
+```bash
+cd scanner3d-raspberrypi
+```
+
+Create a virtual environment:
+
+```bash
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m web_interface.app
 ```
 
-Abra http://127.0.0.1:5000. O modo inicial é simulação e o preview também é sintético. O servidor não abre câmera nem GPIO ao importar módulos. Use somente uma instância por equipamento. A aplicação não possui autenticação e foi projetada para uso local na rede de desenvolvimento.
-
-Uma execução reproduzível pelo terminal:
+Activate the virtual environment:
 
 ```powershell
-.\.venv\Scripts\python.exe -m tools.run_scan --mode simulation --captures 36
+.\.venv\Scripts\Activate.ps1
 ```
 
-O comando imprime o ID da sessão e o caminho da nuvem. Para repetir apenas o processamento, substitua `SESSION_ID` pelo ID retornado:
-
-```powershell
-.\.venv\Scripts\python.exe -m tools.reconstruct outputs/scans/SESSION_ID --calibration outputs/scans/SESSION_ID/calibration.json
-```
-
-## Instalação no Raspberry Pi
-
-Em Raspberry Pi OS com Python compatível, use os pacotes do sistema para OpenCV/NumPy/GPIO quando não houver wheels para a arquitetura ARM:
+Install dependencies:
 
 ```bash
-sudo apt update
-sudo apt install python3-venv python3-opencv python3-numpy python3-flask python3-pytest python3-gpiozero
-python3 -m venv --system-site-packages .venv
-.venv/bin/python -m pytest -q
+pip install -r requirements.txt
 ```
 
-A alternativa em sistemas com wheels disponíveis é instalar `requirements-dev.txt` no venv e `gpiozero` no Raspberry Pi. Não instale GPIO para executar simulação no computador. O projeto usa OpenCV sem janelas gráficas; as imagens de diagnóstico são arquivos PNG.
-
-## Calibração física
-
-Siga [o procedimento completo](docs/calibration-plan.md). Mantenha câmera, lente/foco, resolução, laser e montagem fixos após calibrar. Se algum deles mudar, refaça as etapas afetadas. Todas as medidas são em milímetros.
-
-1. Fotografe um tabuleiro com dimensões medidas, em pelo menos oito poses distintas, variando posição, escala e inclinação. `columns` e `rows` são cantos internos.
-2. Registre pares do tabuleiro sem/com laser em várias poses, sem mover o alvo entre cada par. A pose é obtida do tabuleiro e a linha é intersectada com seu plano.
-3. Determine o eixo com um canto fixo do alvo girando na plataforma e ângulos documentados, ou informe medidas independentes no referencial da câmera.
-4. Valide o bundle completo antes de adquirir um objeto.
+Run the web interface:
 
 ```bash
-python -m tools.calibrate camera --images "data/camera/*.png" --columns 9 --rows 6 --square-mm 20
-python -m tools.calibrate laser --manifest data/laser/manifest.json
-python -m tools.calibrate axis-fit --manifest data/axis/manifest.json
-python -m tools.calibrate validate --calibration outputs/calibration/calibration.json
+python -m web_interface.app
 ```
 
-O valor `20` é um exemplo de dimensão do quadrado: substitua pela dimensão realmente medida. Os exemplos de manifesto e os critérios de diversidade, degenerescência e resíduos estão em [docs/calibration-plan.md](docs/calibration-plan.md). Nenhum arquivo de calibração física é inventado pelo aplicativo.
+Open in the browser:
 
-## Primeiro teste no equipamento
-
-Confira a alimentação do motor/ULN2003, terra comum e ordem das bobinas. Os pinos BCM 17, 27, 22, 23 vêm dos scripts antigos e precisam ser conferidos na montagem. Veja [o roteiro de hardware](docs/hardware-integration-plan.md) para os comandos de captura e movimento pequeno e para verificar passos por volta.
-
-A unidade do motor é **uma transição de meio passo**. Um ciclo da sequência contém oito transições. O valor nominal `4096` transições por volta é configurável e precisa ser medido na sua plataforma, incluindo qualquer transmissão. A posição é comandada em malha aberta; não há sensor, homing ou garantia de ausência de perda de passos. A primeira energização estabelece a referência relativa antes da captura.
-
-Crie `physical-settings.json` na raiz, ajustando os valores à montagem:
-
-```json
-{
-  "scan_steps": 180,
-  "steps_per_revolution": 4096,
-  "direction": 1,
-  "motor_pins": [17, 27, 22, 23],
-  "motor_step_delay": 0.002,
-  "step_delay": 0.3,
-  "capture_delay": 0.05,
-  "camera": {
-    "device": 0, "width": 640, "height": 480,
-    "fps": 30, "flush_frames": 5, "controls": {}
-  },
-  "detector": {},
-  "filtering": {"voxel_size_mm": 0.5},
-  "reconstruction": {"min_depth_mm": 1, "max_depth_mm": 5000}
-}
+```text
+http://127.0.0.1:5000
 ```
 
-A resolução deve corresponder à calibração e ao frame efetivamente recebido. `step_delay` é o tempo de estabilização após o movimento; `motor_step_delay` é o intervalo entre meios passos; `capture_delay` é a pausa posterior à captura. A distribuição usa posições inteiras `floor(i * steps_per_revolution / scan_steps)`, sem erro acumulado e sem repetir 360°.
+---
 
-Depois de conferir câmera e movimento pequeno:
+## Expected `requirements.txt`
+
+The project currently requires:
+
+```txt
+Flask
+opencv-python
+numpy
+```
+
+If the environment was created from another project, make sure the `requirements.txt` does not contain unrelated dependencies such as FastAPI/Uvicorn unless they are actually being used.
+
+---
+
+## How to Run on Raspberry Pi
+
+After cloning the repository on the Raspberry Pi:
 
 ```bash
-.venv/bin/python -m tools.run_scan --mode physical --settings physical-settings.json --calibration outputs/calibration/calibration.json
+cd scanner3d-raspberrypi
 ```
 
-Ctrl+C cancela e aguarda a limpeza. As bobinas são liberadas em conclusão, cancelamento e erro. A aquisição termina na última posição de captura, sem assumir retorno físico à origem.
-
-Para ajustar exposição e foco, use `camera.controls` com propriedades suportadas pelo backend, por exemplo `exposure`, `focus`, `auto_exposure` e `autofocus`. Os valores dependem do driver e não são portáveis. Consulte `GET /camera/status` e os metadados de captura para verificar aceitação/readback. Controles não comprovados continuam desabilitados no painel; o arquivo de configurações/API permite solicitar ajustes no equipamento real.
-
-## Imagens antigas e processamento offline
-
-Prepare uma pasta com `metadata.json`, imagens e calibração real. Exemplo de formato, com ângulos que devem vir do registro da aquisição:
-
-```json
-{
-  "schema_version": 1,
-  "source": "physical",
-  "angle_source": "Registro manual de posições; descrever como os ângulos foram obtidos",
-  "captures": [
-    {"id": "frame_000", "index": 0, "path": "images/frame_000.png", "angle_deg": 0, "status": "captured"},
-    {"id": "frame_001", "index": 1, "path": "images/frame_001.png", "angle_deg": 12.5, "status": "captured"}
-  ]
-}
-```
-
-Os números do exemplo descrevem o formato, não a sua aquisição. Pode haver ângulos irregulares ou capturas ausentes: os descartes são relatados. `laser_off_path` opcional deve apontar para uma imagem pareada da mesma pose/exposição. O software não pressupõe controle eletrônico do laser.
+Create virtual environment:
 
 ```bash
-python -m tools.reconstruct data/minha_sessao --calibration outputs/calibration/calibration.json --settings physical-settings.json
-python -m tools.detect_red --help
+python -m venv .venv
 ```
 
-Não coloque calibração sintética em uma sessão física. Caminhos de imagens são relativos ao manifesto e não podem escapar da pasta autorizada. A ausência de linha, imagens inválidas, resolução incompatível ou reconstrução vazia não são tratadas como sucesso.
+Activate it:
 
-## Resultados e inspeção
+```bash
+source .venv/bin/activate
+```
 
-`outputs/scans/SESSION_ID/` guarda:
+Install dependencies:
 
-- `metadata.json`: origem dos dados, estados, capturas, posições comandadas, ângulos, timestamps, resoluções, falhas e histórico de reconstruções.
-- `settings.json` e `calibration.json`: snapshots utilizados na aquisição.
-- `captures/*.png`: imagens originais.
-- `point_clouds/`: execuções de reconstrução com nuvem bruta, filtrada, prévia PNG e relatório.
-- Máscaras, sobreposições da linha e estatísticas por captura, em caminhos indicados no relatório.
+```bash
+pip install -r requirements.txt
+```
 
-Cada reconstrução usa uma nova pasta para preservar os resultados anteriores. A filtragem voxel mantém uma amostra por célula; o filtro de vizinhança é opcional e desativado por padrão. Compare sempre com a nuvem bruta.
+Run the Flask server:
 
-O painel mostra prévias e permite baixar os PLYs mesmo após reiniciar o servidor. A listagem também inclui arquivos fora de sessões em `outputs/point_clouds`. Capturas manuais ficam em `outputs/captures` e nunca são anexadas a sessões encerradas.
+```bash
+python -m web_interface.app
+```
 
-Para aceitar uma reconstrução real, confira origem e calibração, alinhamento da linha nos overlays, cobertura angular, dimensões e forma da nuvem. Meça um objeto de referência e registre os erros antes de afirmar precisão dimensional.
+Then open from another device on the same network:
 
-## Coordenadas e limitações
+```text
+http://<RASPBERRY_PI_IP>:5000
+```
 
-Câmera: +X à direita, +Y para baixo, +Z para a frente. O plano do laser satisfaz `n · p + d = 0`. Os pixels são corrigidos pela distorção e seus raios intersectados com esse plano. Pontos atrás da câmera, raios quase paralelos e pontos fora dos limites são rejeitados.
+---
 
-A nuvem é expressa em milímetros, com origem no ponto calibrado do eixo e orientação da câmera na referência zero. Cada ponto é transformado por `R(axis, -(angle_deg + angle_offset_deg)) * (p_camera - axis_point)`. O sentido positivo segue a regra da mão direita em torno de `axis_direction`.
+## Current Web Dashboard
 
-A segmentação usa duas faixas de vermelho em HSV, excesso de vermelho, largura, saturação, ambiguidade, confiança e continuidade. Sem par laser desligado/ligado, uma marca vermelha estreita pode ser indistinguível do laser: inspecione os diagnósticos e ajuste ROI/iluminação. Trechos ausentes não são preenchidos artificialmente.
+The dashboard currently includes:
 
-## API e desenvolvimento
+- Live Camera
+- Scanner Status
+- Scanner Controls
+- Config Panel
+- Generated Point Clouds
+- Scan Sessions
+- Future Modules
+- System Logs
 
-Veja [docs/api.md](docs/api.md) e [docs/software-architecture.md](docs/software-architecture.md). Os estados são `idle`, `acquiring`, `processing`, `cancelling`, `completed`, `cancelled` e `error`. Sessões encontradas incompletas após reinício são apresentadas como `interrupted`.
+The interface is designed to support both software development on PC/notebook and future Raspberry Pi hardware integration.
 
-Atualizações durante uma tarefa ativa retornam 409. O cancelamento mantém a reserva até o worker encerrar. Um lock do sistema operacional impede dois processos usando a mesma pasta de saídas; processos configurados com raízes diferentes não compartilham esse lock, portanto não execute duas instâncias para a mesma montagem.
+---
 
-`SCANNER_OUTPUT_ROOT` permite escolher outra raiz de saídas. O padrão é `outputs` na raiz do projeto, independentemente do diretório de onde o servidor foi iniciado.
+## API Endpoints
 
-Testes: detecção com ruído/ausência/reflexos, triangulação e rotações com valores esperados, calibrações inválidas e degeneradas, fase/contagem do motor, câmera falsa, cancelamento, concorrência, sessões/API, PLY e reconstrução repetida. Testes sintéticos validam software, não a precisão física.
+Main available endpoints:
 
-[Author – Danilo Augusto Salvego dos Santos](https://github.com/AugustoSalvego)
+```text
+GET  /
+GET  /video
+GET  /health
+GET  /api-info
+
+POST /capture
+POST /clear-captures
+POST /reset-camera
+
+POST /start-scan
+POST /stop-scan
+
+POST /generate-ply
+GET  /download-ply
+GET  /point-clouds
+GET  /download-ply/<filename>
+POST /delete-ply/<filename>
+
+GET  /settings
+POST /settings
+
+GET  /simulation-mode
+POST /simulation-mode
+
+GET  /logs
+GET  /status
+GET  /scan-sessions
+
+GET  /calibration/status
+GET  /viewer/status
+```
+
+Full API documentation is available in:
+
+```text
+docs/api.md
+```
+
+---
+
+## Scan Sessions
+
+Each scan can generate a dedicated session folder.
+
+Example:
+
+```text
+outputs/
+└── scans/
+    └── scan_YYYYMMDD_HHMMSS/
+        ├── captures/
+        ├── point_clouds/
+        └── metadata.json
+```
+
+This keeps each scan experiment organized and easier to analyze later.
+
+A scan session may contain:
+
+- Captured frames
+- Generated point clouds
+- Metadata
+- Creation time
+- Finish time
+- Scan status
+- Associated file names
+
+This structure is important for future TCC validation and scan comparison.
+
+---
+
+## Simulation Mode
+
+Simulation mode allows the software to run without physical scanner hardware.
+
+### Simulation Mode ON
+
+Used when running on PC/notebook.
+
+Current behavior:
+
+- Motor movement is simulated
+- Point cloud generation is simulated
+- GPIO is not used
+- Safe for interface and pipeline development
+
+### Simulation Mode OFF
+
+Reserved for future Raspberry Pi hardware integration.
+
+Expected future behavior:
+
+- Real GPIO motor control
+- Real camera capture
+- Laser line extraction
+- Real point cloud reconstruction
+
+---
+
+## Calibration
+
+Calibration is planned but not fully implemented yet.
+
+The project already includes:
+
+- Calibration planning documentation
+- Calibration status endpoint
+- Basic calibration file structure
+- Placeholder calibration module
+
+Calibration areas planned:
+
+- Camera intrinsic calibration
+- Lens distortion correction
+- Laser plane calibration
+- Turntable center calibration
+- Scale calibration
+
+More details:
+
+```text
+docs/calibration-plan.md
+```
+
+Current endpoint:
+
+```text
+GET /calibration/status
+```
+
+---
+
+## 3D Viewer
+
+A browser-based 3D viewer is planned for future versions.
+
+The viewer is not implemented yet, but the project already includes:
+
+- 3D viewer planning documentation
+- Viewer status endpoint
+- Placeholder viewer module
+
+Planned future features:
+
+- Load generated PLY files
+- Preview point clouds in the browser
+- Rotate, zoom and pan the view
+- Support session-based previews
+- Future mesh visualization
+
+More details:
+
+```text
+docs/3d-viewer-plan.md
+```
+
+Current endpoint:
+
+```text
+GET /viewer/status
+```
+
+---
+
+## Documentation
+
+Project documentation:
+
+```text
+docs/api.md
+docs/software-architecture.md
+docs/calibration-plan.md
+docs/3d-viewer-plan.md
+docs/hardware-integration-plan.md
+```
+
+### API Documentation
+
+Explains backend routes, response patterns and endpoint behavior.
+
+### Software Architecture
+
+Explains the internal structure of the software, including `scanner_core`, `web_interface`, outputs, sessions and runtime flow.
+
+### Calibration Plan
+
+Explains future camera, laser, turntable and scale calibration.
+
+### 3D Viewer Plan
+
+Explains the future browser-based 3D preview system.
+
+### Hardware Integration Plan
+
+Explains the planned step-by-step process for integrating the software with Raspberry Pi, webcam, laser and motor hardware.
+
+---
+
+## Hardware Integration Roadmap
+
+The physical scanner integration should be done gradually.
+
+Planned order:
+
+```text
+1. Update project on Raspberry Pi
+2. Run Flask server on Raspberry Pi
+3. Test camera detection
+4. Test live camera stream
+5. Test manual capture
+6. Test laser visibility
+7. Test motor separately
+8. Test scan pipeline with simulation mode ON
+9. Test scan pipeline with real motor
+10. Capture real scan sessions
+11. Detect laser line
+12. Generate real point cloud
+13. Improve calibration
+14. Improve reconstruction quality
+```
+
+The goal is to avoid testing everything at once.
+
+---
+
+## Current Limitations
+
+This project is still experimental.
+
+Current limitations:
+
+- Point cloud generation is currently simplified/simulated
+- Real laser triangulation is not implemented yet
+- Camera calibration is not implemented yet
+- Motor control is still simulated in the main web flow
+- Browser-based 3D viewer is not implemented yet
+- Mesh generation is not implemented yet
+- Final hardware integration still needs testing on Raspberry Pi
+
+---
+
+## Future Improvements
+
+Planned improvements:
+
+- Real GPIO motor control
+- Laser line extraction
+- Real point cloud reconstruction
+- Camera calibration
+- Laser plane calibration
+- Turntable calibration
+- Scale correction
+- Mesh generation
+- Browser-based 3D viewer
+- Session-based preview
+- Improved physical scanner structure
+- Multilingual interface: English, Portuguese and Italian
+
+---
+
+## Academic and Portfolio Goals
+
+This project demonstrates knowledge in:
+
+- Python development
+- Flask web development
+- Computer vision
+- OpenCV
+- Embedded systems
+- Hardware/software integration
+- Raspberry Pi development
+- 3D reconstruction concepts
+- File/session organization
+- API design
+- Software architecture
+- Git and GitHub workflow
+
+---
+
+## Development Workflow
+
+Before starting work:
+
+```bash
+git pull
+```
+
+After changes:
+
+```bash
+git status
+git add .
+git commit -m "Describe changes"
+git push
+```
+
+Check if the working tree is clean:
+
+```bash
+git status
+```
+
+Expected result:
+
+```text
+nothing to commit, working tree clean
+```
+
+---
+
+## Version
+
+Current planned software milestone:
+
+```text
+Scanner3D Web Interface v0.1
+```
+
+This version focuses on:
+
+- Dashboard
+- API
+- Simulation mode
+- Sessions
+- PLY generation
+- Documentation
+- Preparation for hardware integration
+
+---
+
+## Author
+
+**Danilo Augusto Salvego dos Santos**
+
+GitHub: [AugustoSalvego](https://github.com/AugustoSalvego)
