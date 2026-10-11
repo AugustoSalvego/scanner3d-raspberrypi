@@ -557,7 +557,22 @@
       @media (prefers-reduced-motion: reduce) {
         button, button.action-busy::before { animation: none; transition: none; }
       }
-    </style>
+    
+      .calib-steps { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; margin: 14px 0; }
+      .calib-step { border: 1px solid var(--border); border-radius: 10px; background: rgba(148,163,184,.07); padding: 12px; }
+      .calib-step strong { display:block; font-size: 14px; margin-bottom: 6px; }
+      .calib-step small { display: block; min-height: 43px; color:var(--text-muted); line-height: 1.35; }
+      .calib-step button { width:100%; margin-top:12px; }
+      .calib-step .stage-status { display:block; font-size:12px; margin-top:9px; color:var(--text-muted); }
+      .calib-section { padding-top:16px; border-top:1px solid var(--border); margin-top:16px; }
+      .calib-section h3 { margin: 0 0 8px; font-size: 16px; }
+      .calib-callout { background: rgba(56,189,248,.07); border:1px solid var(--border); border-radius: 10px; padding:12px; margin: 12px 0; font-size:13px; line-height:1.5; }
+      .calib-input { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0; }
+      .calib-input input { width:100px; }
+      #calibResult { margin:12px 0; font-size:13px; line-height:1.55; white-space:pre-wrap; }
+      .calib-actions { display:flex; gap:9px; flex-wrap:wrap; margin-top:12px; }
+      #calibRunBox { margin-top:14px; }
+</style>
   </head>
 
   <body>
@@ -691,6 +706,102 @@
                 <span>Simulation Mode</span>
                 <span id="simulationStatus">ON</span>
               </div>
+            </div>
+          </section>
+
+          <section class="card" id="calibrationCard">
+            <div class="card-header">
+              <div>
+                <h2>Calibrate — 9 × 6 Checkerboard</h2>
+                <p class="card-description">
+                  Real camera, rotation-axis and laser-plane calibration.
+                  All three are required for accurate 3D reconstruction.
+                </p>
+              </div>
+            </div>
+            <div class="calib-callout">
+              <strong>Before starting:</strong> secure your rigid, flat checkerboard
+              on the turntable, approximately 2 cm off-centre, but without
+              tilting the platform. Measure a printed square with a ruler.
+              The camera must stay fixed during both calibration and scanning.
+              Never look directly into the laser.
+            </div>
+            <div class="calib-input">
+              <label for="calibSquare">Measured square size (mm)</label>
+              <input id="calibSquare" type="number" step="0.01" min="1" max="100" value="10.00" />
+              <span class="card-description">9 columns × 6 rows of internal corners</span>
+            </div>
+
+            <div class="calib-section">
+              <h3>1. Camera and turntable axis — laser OFF</h3>
+              <p class="card-description">
+                Use diffuse WHITE lighting, laser OFF, green light OFF.
+                The board remains rigidly in the same position for each full revolution.
+                Change the board tilt only BETWEEN the three sweeps.
+              </p>
+              <div class="calib-steps">
+                <div class="calib-step">
+                  <strong>1 · Upright</strong><small>Face the camera, standing straight.</small>
+                  <button class="btn-success calib-action" id="calibCamera1" onclick="calibrationCapture('camera',1)">Capture 36 photos</button>
+                  <span id="stage_camera1" class="stage-status">Not captured</span>
+                </div>
+                <div class="calib-step">
+                  <strong>2 · Lean back</strong><small>Reposition the board 15–25° backward.</small>
+                  <button class="btn-success calib-action" id="calibCamera2" onclick="calibrationCapture('camera',2)">Capture 36 photos</button>
+                  <span id="stage_camera2" class="stage-status">Not captured</span>
+                </div>
+                <div class="calib-step">
+                  <strong>3 · Lean forward</strong><small>Reposition the board 15–25° forward.</small>
+                  <button class="btn-success calib-action" id="calibCamera3" onclick="calibrationCapture('camera',3)">Capture 36 photos</button>
+                  <span id="stage_camera3" class="stage-status">Not captured</span>
+                </div>
+              </div>
+              <div class="calib-actions">
+                <button class="calib-action" id="calibComputeCamera" onclick="calibrationCompute('camera')">
+                  Compute Camera + Axis
+                </button>
+              </div>
+            </div>
+
+            <div class="calib-section">
+              <h3>2. Laser plane — red laser ON</h3>
+              <p class="card-description">
+                Keep the camera and laser absolutely fixed. Reduce ambient light,
+                keep the red laser ON and capture the board in up to three tilts.
+                Start with upright and add other positions for stronger geometry.
+              </p>
+              <div class="calib-steps">
+                <div class="calib-step">
+                  <strong>1 · Upright</strong><small>Red line must cross the checkerboard.</small>
+                  <button class="calib-action" id="calibLaser1" onclick="calibrationCapture('laser',1)">Capture laser</button>
+                  <span id="stage_laser1" class="stage-status">Not captured</span>
+                </div>
+                <div class="calib-step">
+                  <strong>2 · Lean back</strong><small>15–25° back, then repeat the sweep.</small>
+                  <button class="calib-action" id="calibLaser2" onclick="calibrationCapture('laser',2)">Capture laser</button>
+                  <span id="stage_laser2" class="stage-status">Not captured</span>
+                </div>
+                <div class="calib-step">
+                  <strong>3 · Lean forward</strong><small>15–25° forward, then repeat the sweep.</small>
+                  <button class="calib-action" id="calibLaser3" onclick="calibrationCapture('laser',3)">Capture laser</button>
+                  <span id="stage_laser3" class="stage-status">Not captured</span>
+                </div>
+              </div>
+              <div class="calib-actions">
+                <button class="calib-action" id="calibComputeLaser" onclick="calibrationCompute('laser')">
+                  Compute Laser Plane
+                </button>
+              </div>
+            </div>
+
+            <div id="calibRunBox" class="action-progress" role="status" aria-live="polite">
+              <p id="calibProgressLabel">Ready for calibration.</p>
+              <progress id="calibProgressBar" max="100" value="0"></progress>
+              <div id="calibResult">No calibration profiles computed yet.</div>
+            </div>
+            <div class="calib-actions">
+              <button class="btn-danger" id="calibStop" onclick="calibrationStop()" disabled>Stop Calibration</button>
+              <button onclick="calibrationReset()">Reset calibration photos</button>
             </div>
           </section>
 
@@ -1027,6 +1138,145 @@
         if (start) start.disabled = running;
         const stop = document.getElementById("stopScanButton");
         if (stop) stop.disabled = !running;
+      }
+
+
+      // Calibration UI is driven by the real backend state; a successful
+      // POST only means 'started', never 'calibrated'.
+      let calibrationLastError = null;
+
+      async function calibrationCapture(kind, placement) {
+        const square = Number(document.getElementById("calibSquare").value);
+        if (!Number.isFinite(square) || square < 1 || square > 100) {
+          showMessage("Measure and enter the square size in millimetres.", "error");
+          return;
+        }
+        const illumination = kind === "camera"
+          ? "Confirm: WHITE illumination ON, RED LASER OFF and GREEN illumination OFF."
+          : "Confirm: RED LASER ON, green lighting OFF, checkerboard secured and visible.";
+        const pose = ["upright", "leaning backward", "leaning forward"][placement - 1];
+        if (!window.confirm(illumination + "\nBoard: " + pose + ". Start 360° rotation?")) return;
+        const id = "calib" + (kind === "camera" ? "Camera" : "Laser") + placement;
+        busyButton(id, true);
+        try {
+          const response = await requestJson("/api/calibration/workflow/capture", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({kind,placement,square_size_mm:square})
+          });
+          showMessage("Calibration capture started; the base is rotating.", "info");
+          await updateCalibrationStatus();
+        } catch (error) {
+          showMessage("Calibration could not start: " + error.message, "error");
+        } finally {
+          busyButton(id, false);
+        }
+      }
+
+      async function calibrationCompute(kind) {
+        if (!window.confirm("Compute the " + kind + " calibration from captured images?")) return;
+        const id = kind === "camera" ? "calibComputeCamera" : "calibComputeLaser";
+        busyButton(id, true);
+        try {
+          await requestJson("/api/calibration/workflow/compute", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({kind})
+          });
+          showMessage("Computing calibration. Wait for the numerical result.", "info");
+          await updateCalibrationStatus();
+        } catch (error) {
+          showMessage("Calibration could not compute: " + error.message, "error");
+        } finally {
+          busyButton(id, false);
+        }
+      }
+
+      async function calibrationStop() {
+        try {
+          await requestJson("/api/calibration/workflow/stop", {method:"POST"});
+          showMessage("Stop requested; motor is being released.", "warning");
+        } catch (error) {
+          showMessage("Cannot stop calibration: " + error.message, "error");
+        }
+      }
+
+      async function calibrationReset() {
+        if (!window.confirm(
+          "Delete only the current calibration photographs? Saved camera/axis/laser profiles will remain."
+        )) return;
+        try {
+          await requestJson("/api/calibration/workflow/reset", {method:"POST"});
+          showMessage("Calibration photographs reset. Saved profiles preserved.", "info");
+          await updateCalibrationStatus();
+        } catch (error) {
+          showMessage(error.message, "error");
+        }
+      }
+
+      async function updateCalibrationStatus() {
+        try {
+          const result = await requestJson("/api/calibration/workflow");
+          const data = result.data || {};
+          const active = data.run || {};
+          const operation = active.operation || "";
+          const busy = Boolean(active.running);
+          const percent = Number(active.total) > 0
+            ? Math.round(Number(active.done || 0) / active.total * 100) : 0;
+          document.getElementById("calibProgressBar").value = percent;
+          document.getElementById("calibProgressLabel").textContent =
+            (busy ? "In progress: " : "") + (active.message || "Ready") +
+            (busy ? " — " + (active.done || 0) + "/" + (active.total || 0) +
+                      " · board found in " + (active.board_found || 0) + " images" : "");
+          document.getElementById("calibStop").disabled = !busy;
+          document.querySelectorAll(".calib-action").forEach(btn => {
+            btn.disabled = busy;
+            const isThis =
+              operation === "capture_camera" && btn.id === "calibCamera" + active.placement ||
+              operation === "capture_laser" && btn.id === "calibLaser" + active.placement ||
+              operation === "compute_camera" && btn.id === "calibComputeCamera" ||
+              operation === "compute_laser" && btn.id === "calibComputeLaser";
+            btn.classList.toggle("action-busy", busy && isThis);
+            btn.setAttribute("aria-busy", busy && isThis ? "true" : "false");
+          });
+          const stages = data.stages || {};
+          for (const kind of ["camera","laser"]) {
+            for (const n of [1,2,3]) {
+              const key = kind + n;
+              const stage = stages[key] || {};
+              const element = document.getElementById("stage_" + key);
+              if (element) {
+                element.textContent = stage.status
+                  ? stage.status.toUpperCase() + " · " + (stage.board_found || 0) +
+                    "/" + (stage.images || 0) + " recognized"
+                  : "Not captured";
+              }
+            }
+          }
+          const profiles = data.profiles || {};
+          const cam = profiles.camera?.profile || {};
+          const axis = profiles.turntable?.profile || {};
+          const laser = profiles.laser?.profile || {};
+          const yesno = (value) => value ? "READY" : "NOT CALIBRATED";
+          const resultLines = [
+            "Camera: " + yesno(profiles.camera?.calibrated) +
+              (cam.rms_reprojection_px != null ? " · RMS " + cam.rms_reprojection_px.toFixed(3) + " px" : ""),
+            "Turntable axis: " + yesno(profiles.turntable?.calibrated) +
+              (axis.axis_offset_disagreement_mm != null
+                ? " · spread " + axis.axis_offset_disagreement_mm.toFixed(2) + " mm" : ""),
+            "Laser plane: " + yesno(profiles.laser?.calibrated) +
+              (laser.rms_plane_mm != null ? " · RMS " + laser.rms_plane_mm.toFixed(2) + " mm" : "")
+          ];
+          document.getElementById("calibResult").textContent = resultLines.join("\n");
+          if (active.error && active.error !== calibrationLastError) {
+            calibrationLastError = active.error;
+            showMessage("Calibration rejected: " + active.error, "error");
+          } else if (!active.error) {
+            calibrationLastError = null;
+          }
+        } catch (error) {
+          document.getElementById("calibProgressLabel").textContent =
+            "Calibration status unavailable: " + error.message;
+        }
       }
 
       async function startScan() {
@@ -1431,9 +1681,11 @@
         updateStatus();
         updatePointClouds();
         updateScanSessions();
+        updateCalibrationStatus();
       }, 1000);
 
       loadSettings();
+      updateCalibrationStatus();
       updateLogs();
       updateStatus();
       updatePointClouds();
