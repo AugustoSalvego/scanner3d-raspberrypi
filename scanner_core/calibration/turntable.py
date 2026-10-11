@@ -42,7 +42,12 @@ from scanner_core.calibration.store import (
     TurntableCalibration,
 )
 from scanner_core.errors import CalibrationError
-from scanner_core.geometry import build_axis_frame, fit_rotation_axis, normalize
+from scanner_core.geometry import (
+    build_axis_frame,
+    fit_rotation_axis,
+    normalize,
+    orient_axis_upward,
+)
 
 #: The fitted angle scale must stay this close to 1.0, otherwise the configured
 #: steps_per_revolution disagrees with the platform's real gear ratio.
@@ -103,6 +108,10 @@ def estimate_turntable_axis(
 
     fit = fit_rotation_axis(points)
 
+    # The fitted normal has an arbitrary sign; it must point up *before* the
+    # rotation sense is measured, so the two stay consistent with each other.
+    direction = orient_axis_upward(fit.direction)
+
     warnings: list[str] = []
 
     if fit.radius_mm < 5.0:
@@ -113,7 +122,7 @@ def estimate_turntable_axis(
 
     # Measure the realised rotation by looking at the polar angle of each
     # observation inside the fitted axis frame.
-    frame = build_axis_frame(fit.direction)
+    frame = build_axis_frame(direction)
     local = (points - fit.origin) @ frame.T
 
     measured = np.degrees(np.arctan2(local[:, 1], local[:, 0]))
@@ -150,7 +159,7 @@ def estimate_turntable_axis(
 
     return TurntableEstimate(
         axis_origin=fit.origin,
-        axis_direction=normalize(fit.direction),
+        axis_direction=direction,
         rotation_direction=rotation_direction,
         radius_mm=fit.radius_mm,
         rms_mm=fit.rms_mm,

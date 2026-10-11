@@ -106,13 +106,40 @@ def list_calibration_images(directory: Path) -> list[Path]:
     return images
 
 
+def normalize_corner_order(corners: np.ndarray) -> np.ndarray:
+    """Make corner 0 the image-top-left end of the grid.
+
+    A board with different row and column counts can still be reported in two
+    orders, 180 degrees apart, and OpenCV's two detectors disagree: on the same
+    upright board ``findChessboardCornersSB`` starts at the bottom-right corner
+    and ``findChessboardCorners`` at the top-left.  The intrinsics do not care,
+    but anything that follows corner 0 across images (turntable tracking, board
+    poses) jumps to the opposite corner whenever the detector used changes.
+
+    The board never turns upside down on the turntable, so "corner 0 is the end
+    of the grid nearest the image top-left" is a stable physical choice.
+    """
+
+    corners = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
+
+    first = corners[0, 0]
+    last = corners[-1, 0]
+
+    if float(first[0] + first[1]) > float(last[0] + last[1]):
+        corners = corners[::-1].copy()
+
+    return corners
+
+
 def find_checkerboard(
     image: np.ndarray,
     spec: CheckerboardSpec,
 ) -> np.ndarray | None:
     """Locate the inner corners of the checkerboard, refined to sub-pixel.
 
-    Returns ``None`` when the board is not visible in the image.
+    Returns ``None`` when the board is not visible in the image.  The corners
+    always come back in the order described by :func:`normalize_corner_order`,
+    whichever detector found them.
     """
 
     if image.ndim == 3:
@@ -128,7 +155,7 @@ def find_checkerboard(
         found, corners = finder_sb(gray, spec.size, flags=flags)
 
         if found:
-            return corners.reshape(-1, 1, 2).astype(np.float32)
+            return normalize_corner_order(corners)
 
     found, corners = cv2.findChessboardCorners(
         gray,
@@ -143,7 +170,19 @@ def find_checkerboard(
 
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
-    return cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+    # The refinement window must stay inside one square.  A fixed 23x23 px
+    # window swallowed neighbouring corners whenever the board was small or
+    # seen at a steep angle, pulling corners up to 10 px off.
+    grid = corners.reshape(spec.rows, spec.columns, 2)
+    spacing = min(
+        float(np.min(np.linalg.norm(np.diff(grid, axis=1), axis=2))),
+        float(np.min(np.linalg.norm(np.diff(grid, axis=0), axis=2))),
+    )
+    half = int(np.clip(round(spacing * 0.4), 2, 11))
+
+    return normalize_corner_order(
+        cv2.cornerSubPix(gray, corners, (half, half), (-1, -1), criteria)
+    )
 
 
 def detect_corners_in_images(

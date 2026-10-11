@@ -547,6 +547,26 @@ def fit_circle_2d(points_2d: np.ndarray) -> tuple[np.ndarray, float, float]:
     return centre, radius, rms
 
 
+#: "Up" as seen from a camera in OpenCV convention (``+Y`` down, ``+Z``
+#: forward).  Mixing in ``-Z`` keeps it meaningful for any camera looking at the
+#: platform from horizontal down to straight above it.
+CAMERA_UP_REFERENCE = np.array([0.0, -1.0, -1.0]) / np.sqrt(2.0)
+
+
+def orient_axis_upward(direction: np.ndarray) -> np.ndarray:
+    """Flip a rotation axis so it points up, away from the platform.
+
+    A plane or circle fit returns its normal with an arbitrary sign.  For the
+    turntable that sign matters: reconstruction measures heights along the
+    axis, so a downward axis turns the object upside down and the height
+    limits then cut most of it away.
+    """
+
+    unit = normalize(np.asarray(direction, dtype=np.float64).reshape(3))
+
+    return -unit if float(unit @ CAMERA_UP_REFERENCE) < 0.0 else unit
+
+
 def fit_rotation_axis(points: np.ndarray) -> AxisFitResult:
     """Recover a rotation axis from one physical point seen at several angles.
 
