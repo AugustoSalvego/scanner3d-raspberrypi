@@ -23,7 +23,7 @@ from scanner_core.calibration_geometry import (
     BOARD_COLUMNS, BOARD_ROWS, CalibrationFailure,
     compute_axis, compute_camera, compute_laser_plane, find_board,
 )
-from scanner_core.config import MOTOR_HALF_STEPS_PER_REV, MOTOR_PHASE_DELAY
+from scanner_core.config import MOTOR_HALF_STEPS_PER_REV, CALIBRATION_MOTOR_PHASE_DELAY
 from scanner_core.hardware_gate import hardware_gate
 from scanner_core.logger import add_log
 from scanner_core.motor import MotorInterrupted, TurntableMotor
@@ -116,7 +116,7 @@ def calibration_status():
         "left_capture_step_deg": LEFT_CAPTURE_STEP_DEG,
         "max_side_degrees": MAX_SIDE_DEGREES,
         "settle_seconds": SETTLE_SECONDS,
-        "right_direction": RIGHT_DIRECTION,
+        "right_direction": direction,
         "run_status": (run.get("stages", {}).get("camera1") or {}).get("status"),
         "stages": completed,
         "preflight_preview_url": (
@@ -136,10 +136,13 @@ def stop_calibration():
     return True
 
 
-def start_capture(kind, placement, square_mm):
+def start_capture(kind, placement, square_mm, right_direction=None):
     if kind not in ("camera", "laser") or placement != 1:
         raise CalibrationFailure("This TCC workflow uses only placement 1: the upright board.")
     square = _valid_square(square_mm)
+    direction = RIGHT_DIRECTION if right_direction is None else int(right_direction)
+    if direction not in (-1, 1):
+        raise CalibrationFailure("Right motor direction must be +1 or -1.")
     if not hardware_gate.acquire(blocking=False):
         raise CalibrationFailure("Scanner busy: finish the current scan or calibration first.")
     try:
@@ -159,9 +162,10 @@ def start_capture(kind, placement, square_mm):
         _stop.clear()
         _set_state(running=True, operation=f"capture_{kind}", placement=placement,
                    done=0, total=STOPS, board_found=0, error=None,
+                   right_direction=direction,
                    message=f"Checking the right visibility limit, then photographing left ({kind})...")
         thread = threading.Thread(
-            target=_capture_worker, args=(kind, placement, square),
+            target=_capture_worker, args=(kind, placement, square, direction),
             name=f"calibration-{kind}-{placement}", daemon=True
         )
         thread.start()
@@ -215,7 +219,10 @@ def _archive_previous_stage(run, stage_key, folder):
     add_log(f"Previous calibration photographs preserved: {archive}")
 
 
-def _capture_worker(kind, placement, square):
+def _capture_worker(kind, placement, square, right_direction=None):
+    direction = RIGHT_DIRECTION if right_direction is None else int(right_direction)
+    if direction not in (-1, 1):
+        raise CalibrationFailure("Right direction must be +1 or -1.")
     stage_key = f"{kind}{placement}"
     record = {
         "status": "running", "frames": [], "error": None,
@@ -246,7 +253,7 @@ def _capture_worker(kind, placement, square):
         run.setdefault("stages", {})[stage_key] = record
         _save_json(RUN_FILE, run)
 
-        with TurntableMotor(phase_delay=MOTOR_PHASE_DELAY) as motor:
+        with TurntableMotor(phase_delay=CALIBRATION_MOTOR_PHASE_DELAY) as motor:
             # The user's starting position is the FRONT and position zero.
             initial = _capture_at(motor, 0)
             front_corners = find_board(initial)
@@ -268,7 +275,7 @@ def _capture_worker(kind, placement, square):
             for n in range(1, probe_count + 1):
                 if _stop.is_set():
                     raise MotorInterrupted("Stop requested while searching right.")
-                target_angle = RIGHT_DIRECTION * n * RIGHT_SEARCH_STEP_DEG
+                target_angle = direction * n * RIGHT_SEARCH_STEP_DEG
                 frame = _capture_at(motor, target_angle)
                 visible = find_board(frame) is not None
                 if visible:
@@ -316,7 +323,7 @@ def _capture_worker(kind, placement, square):
             for n in range(STOPS):
                 if _stop.is_set():
                     raise MotorInterrupted("Stop requested while photographing left.")
-                left_angle = -RIGHT_DIRECTION * n * LEFT_CAPTURE_STEP_DEG
+                left_angle = -direction * n * LEFT_CAPTURE_STEP_DEG
                 if abs(left_angle) > MAX_SIDE_DEGREES:
                     break
                 frame = _capture_at(motor, left_angle)
