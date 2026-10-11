@@ -138,6 +138,7 @@ def info():
                     "POST /api/calibration/auto/stop",
                     "POST /api/calibration/auto/compute",
                     "POST /api/calibration/auto/reset",
+                    "GET /api/calibration/auto/download",
                     "POST /api/calibration/laser/diagnose",
                     "GET /diagnostics/<run>/<filename>",
                 ],

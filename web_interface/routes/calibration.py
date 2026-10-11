@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import datetime
 
 import cv2
@@ -260,6 +262,49 @@ def auto_compute():
         )
 
     return api_success("Calibration saved.", payload, 201)
+
+
+@blueprint.get("/api/calibration/auto/download")
+def auto_download():
+    """Every photograph, the run record and the overlays, as one zip.
+
+    So the operator can hand the real images to whoever tunes the detector,
+    instead of describing them.
+    """
+
+    directory = scan_controller.auto_calibration_directory
+
+    if not (directory / "run.json").exists():
+        return api_error("Nothing has been captured yet.", 404)
+
+    buffer = io.BytesIO()
+
+    # JPEGs are already compressed; storing them is as small and much faster
+    # on a Raspberry Pi.
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        for path in sorted(directory.rglob("*")):
+            if path.is_file() and not path.is_symlink() and path.suffix.lower() in {".jpg", ".json"}:
+                archive.write(path, arcname=path.relative_to(directory).as_posix())
+
+        diagnostics = paths.DIAGNOSTICS_DIR / AUTO_CALIBRATION_DIAGNOSTICS
+
+        if diagnostics.is_dir():
+            for path in sorted(diagnostics.glob("*.jpg")):
+                archive.write(path, arcname=f"diagnostics/{path.name}")
+
+        if paths.CONFIG_FILE.is_file():
+            archive.write(paths.CONFIG_FILE, arcname="scanner_config.json")
+
+    buffer.seek(0)
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    return send_file(
+        buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"calibration_photos_{stamp}.zip",
+    )
 
 
 @blueprint.post("/api/calibration/auto/reset")

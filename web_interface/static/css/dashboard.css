@@ -537,3 +537,23 @@ code {
     align-items: flex-start;
   }
 }
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 13px;
+  text-decoration: none;
+}
+
+.button-link.ghost {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+
+.button-link[hidden] {
+  display: none;
+}

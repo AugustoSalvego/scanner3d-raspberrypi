@@ -386,6 +386,7 @@
 
     $("autoCompute").disabled = running || state.busy || !(run.steps_complete > 0);
     $("autoReset").disabled = running || state.busy || !run.exists;
+    $("autoDownload").hidden = !run.exists || calibrating;
     $("autoStop").disabled = !calibrating;
 
     const reconstruct = $("reconstructSession");

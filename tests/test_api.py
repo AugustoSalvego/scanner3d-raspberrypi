@@ -614,3 +614,31 @@ class TestFullScanThroughTheApi:
 
         assert client.delete(f"/api/scan/sessions/{session_id}").status_code == 200
         assert client.get(f"/api/scan/sessions/{session_id}").status_code == 404
+
+
+class TestAutomaticCalibrationDownload:
+    def test_nothing_to_download(self, client):
+        assert client.get("/api/calibration/auto/download").status_code == 404
+
+    def test_zip_holds_the_photographs_and_the_record(self, client):
+        import io
+        import zipfile
+
+        from scanner_core.calibration.auto import run_directory
+
+        directory = run_directory(paths.CALIBRATION_DIR)
+        (directory / "step1").mkdir(parents=True)
+        (directory / "run.json").write_text('{"steps": {}}', encoding="utf-8")
+        (directory / "step1" / "frame_000.jpg").write_bytes(b"\xff\xd8 fake jpeg")
+        (directory / "notes.txt").write_text("not included", encoding="utf-8")
+
+        response = client.get("/api/calibration/auto/download")
+
+        assert response.status_code == 200
+        assert response.mimetype == "application/zip"
+
+        names = zipfile.ZipFile(io.BytesIO(response.data)).namelist()
+
+        assert "run.json" in names
+        assert "step1/frame_000.jpg" in names
+        assert "notes.txt" not in names
