@@ -20,6 +20,7 @@ intentionally left open so the live preview survives the end of a scan.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass
@@ -97,29 +98,70 @@ class ScanController:
         self._hardware_lock = threading.RLock()
         self._hardware: HardwareSet | None = None
         self._hardware_mode: ScannerMode | None = None
+        self._hardware_signature: str | None = None
 
     # ------------------------------------------------------------------
     # Hardware lifecycle
     # ------------------------------------------------------------------
-    def _ensure_hardware(self, config: ScannerConfig) -> HardwareSet:
-        """Return the hardware set for the current mode, building it if needed.
+    @staticmethod
+    def hardware_signature(config: ScannerConfig) -> str:
+        """Everything the devices are built from.
 
-        The set is cached so the live preview keeps one camera handle across
-        scans instead of reopening the device every time.
+        The cached hardware set is only reused while this is unchanged.  Keying
+        the cache on the mode alone meant a new resolution, motor setting or
+        simulated object was silently ignored until the server restarted.
         """
 
+        plain = config.to_dict()
+
+        return json.dumps(
+            {
+                "mode": plain["mode"],
+                "camera": plain["camera"],
+                "motor": plain["motor"],
+                "laser": plain["laser"],
+                "simulation": plain["simulation"],
+            },
+            sort_keys=True,
+        )
+
+    def _ensure_hardware(self, config: ScannerConfig) -> HardwareSet:
+        """Return the hardware set for ``config``, building it if needed.
+
+        The set is cached so the live preview keeps one camera handle across
+        scans instead of reopening the device every time, but it is rebuilt as
+        soon as any setting it was built from changes.
+        """
+
+        signature = self.hardware_signature(config)
+
         with self._hardware_lock:
-            if self._hardware is not None and self._hardware_mode is config.mode:
+            if self._hardware is not None and self._hardware_signature == signature:
                 return self._hardware
 
             self.release_hardware()
 
-            hardware = build_hardware(config)
+            hardware = build_hardware(config, store=self._calibration)
 
             self._hardware = hardware
             self._hardware_mode = config.mode
+            self._hardware_signature = signature
 
             return hardware
+
+    def _current_or_new_hardware(self, config: ScannerConfig) -> HardwareSet:
+        """Hardware for a *reader* such as the live preview.
+
+        While a scan or a calibration owns the devices they must never be
+        rebuilt underneath it - that would close the motor mid-move - so the
+        running set is returned as is.  Otherwise this is ``_ensure_hardware``.
+        """
+
+        with self._hardware_lock:
+            if self.is_running and self._hardware is not None:
+                return self._hardware
+
+        return self._ensure_hardware(config)
 
     def release_hardware(self) -> None:
         """Close every device.  Used on mode change and at shutdown."""
@@ -130,6 +172,7 @@ class ScanController:
 
             self._hardware = None
             self._hardware_mode = None
+            self._hardware_signature = None
 
     def preview_frame(self):
         """One frame for the MJPEG stream, or ``None`` when unavailable."""
@@ -140,7 +183,7 @@ class ScanController:
             return None
 
         try:
-            hardware = self._ensure_hardware(config)
+            hardware = self._current_or_new_hardware(config)
         except ScannerError as error:
             logger.debug(f"Preview unavailable: {error}")
 
@@ -164,7 +207,7 @@ class ScanController:
         with self._hardware_lock:
             hardware = self._hardware
 
-        if hardware is None or self._hardware_mode is not config.mode:
+        if hardware is None or self._hardware_signature != self.hardware_signature(config):
             return {
                 "mode": config.mode.value,
                 "camera": {"configured": True, "available": False, "open": False},
@@ -212,6 +255,11 @@ class ScanController:
             raise ConfigurationError(
                 "Offline mode does not drive the camera. Switch to simulation or "
                 "physical mode to capture."
+            )
+
+        if self.is_running:
+            raise ScanAlreadyRunning(
+                "A scan or calibration is running; wait for it to finish before capturing."
             )
 
         hardware = self._ensure_hardware(config)
@@ -312,6 +360,13 @@ class ScanController:
         hardware = self._ensure_hardware(config)
 
         allow_synthetic = config.mode is ScannerMode.SIMULATION
+
+        if config.mode is ScannerMode.PHYSICAL:
+            # Always scan with the calibration that is on disk *now*.  The
+            # cached hardware set may have been built before the operator
+            # calibrated, and reusing its copy made a fresh calibration look
+            # "missing" until the server was restarted.
+            hardware.calibration = self._calibration.load_bundle()
 
         # Fail before the motor turns, not half way through a scan.
         hardware.calibration.require_ready(allow_synthetic=allow_synthetic)

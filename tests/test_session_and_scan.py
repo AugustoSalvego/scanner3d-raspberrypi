@@ -503,3 +503,130 @@ class TestSimulatedScan:
         outcome = controller.run_scan()
 
         assert outcome.status is SessionStatus.COMPLETED
+
+
+class TestHardwareFollowsTheCurrentConfiguration:
+    """The controller caches its devices for the live preview.  That cache must
+    never make a scan run on settings or a calibration that are out of date."""
+
+    def _controller(self, tmp_path, mode="simulation"):
+        from scanner_core.calibration.store import CalibrationStore
+        from scanner_core.session import SessionManager
+
+        store = ConfigStore(path=tmp_path / "config.json")
+        store.update(
+            {
+                "mode": mode,
+                "scan": {"capture_count": 24, "settle_delay": 0.0, "capture_delay": 0.0},
+                "simulation": {
+                    "image_width": 320,
+                    "image_height": 240,
+                    "focal_length_px": 350.0,
+                    "shape": "cylinder",
+                },
+                "detector": {"min_points": 10},
+            },
+            persist=False,
+        )
+
+        return ScanController(
+            configuration=store,
+            state=StateStore(),
+            sessions=SessionManager(root=tmp_path / "scans"),
+            calibration=CalibrationStore(directory=tmp_path / "calibration"),
+        )
+
+    def test_a_setting_changed_after_the_preview_opened_is_used(self, tmp_path):
+        import numpy as np
+
+        from scanner_core.simulation import SyntheticScene
+
+        controller = self._controller(tmp_path)
+
+        # The dashboard opens the preview first: devices get built and cached.
+        controller.preview_frame()
+
+        # Then the operator changes the simulated object and scans.
+        controller._config_store.update({"simulation": {"shape": "sphere"}}, persist=False)
+
+        outcome = controller.run_scan()
+        cloud = read_ply(outcome.point_cloud_path)
+
+        sphere = controller._config_store.get().simulation
+        residual = SyntheticScene(sphere).surface_residual(cloud.points)
+
+        # The old cache rendered the cylinder: ~5 mm off a sphere.
+        assert float(np.mean(residual)) < 0.5
+
+    def test_motor_settings_rebuild_the_motor(self, tmp_path):
+        controller = self._controller(tmp_path)
+
+        first = controller._ensure_hardware(controller._config_store.get())
+
+        controller._config_store.update({"motor": {"steps_per_revolution": 4076}}, persist=False)
+
+        second = controller._ensure_hardware(controller._config_store.get())
+
+        assert second is not first
+        assert second.motor.config.steps_per_revolution == 4076
+
+    def test_unrelated_settings_keep_the_cached_devices(self, tmp_path):
+        controller = self._controller(tmp_path)
+
+        first = controller._ensure_hardware(controller._config_store.get())
+
+        controller._config_store.update({"filtering": {"voxel_size_mm": 1.5}}, persist=False)
+
+        assert controller._ensure_hardware(controller._config_store.get()) is first
+
+    def test_a_calibration_saved_after_the_preview_opened_is_used(self, tmp_path):
+        from scanner_core.simulation import SyntheticScene
+
+        controller = self._controller(tmp_path, mode="physical")
+        config = controller._config_store.get()
+
+        # Devices are only constructed here; nothing is opened.
+        controller._ensure_hardware(config)
+
+        bundle = SyntheticScene().build_calibration_bundle()
+
+        for profile in (bundle.camera, bundle.laser, bundle.turntable):
+            profile.source = "checkerboard"
+
+        bundle.camera.image_count = 12
+        bundle.laser.point_count = 900
+        bundle.laser.pose_count = 4
+        bundle.turntable.method = "manual"
+
+        controller._calibration.save_camera(bundle.camera)
+        controller._calibration.save_laser(bundle.laser)
+        controller._calibration.save_turntable(bundle.turntable)
+
+        # Used to fail with "Camera calibration is missing" until a restart.
+        session = controller._prepare_scan(config)
+
+        assert session.metadata()["calibration"]["camera"]["source"] == "checkerboard"
+
+    def test_a_running_scan_keeps_its_devices(self, tmp_path):
+        controller = self._controller(tmp_path)
+
+        in_use = controller._ensure_hardware(controller._config_store.get())
+        controller._config_store.update({"motor": {"step_delay": 0.003}}, persist=False)
+
+        # Simulate a scan holding the scanner.
+        controller._scan_mutex.acquire()
+
+        try:
+            controller.preview_frame()
+
+            assert controller._hardware is in_use
+
+            with pytest.raises(ScanAlreadyRunning):
+                controller.capture_still()
+        finally:
+            controller._scan_mutex.release()
+
+        # Once the scan is over, the next reader picks up the new settings.
+        controller.preview_frame()
+
+        assert controller._hardware is not in_use
