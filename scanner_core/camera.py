@@ -1,6 +1,7 @@
 import cv2
 import os
 from datetime import datetime
+import threading
 
 from scanner_core.config import CAMERA_INDEX
 from scanner_core.config import OUTPUT_FOLDER
@@ -11,31 +12,34 @@ from scanner_core.session import add_capture_to_session
 
 
 camera = None
+_camera_lock = threading.RLock()
 
 
 def initialize():
     global camera
-
-    if camera is None:
-        camera = cv2.VideoCapture(CAMERA_INDEX)
-
-        if not camera.isOpened():
-            add_log("Camera failed to open")
-            camera = None
+    with _camera_lock:
+        if camera is None:
+            candidate = cv2.VideoCapture(CAMERA_INDEX)
+            if not candidate.isOpened():
+                add_log("Camera failed to open")
+                candidate.release()
+                return
+            # Stable MJPEG resolution across calibration and scanning.
+            candidate.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            candidate.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            candidate.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            candidate.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            camera = candidate
+            add_log("USB camera opened (requested 1280x720 MJPEG).")
 
 
 def get_frame():
-    initialize()
-
-    if camera is None:
-        return None
-
-    success, frame = camera.read()
-
-    if success:
-        return frame
-
-    return None
+    with _camera_lock:
+        initialize()
+        if camera is None:
+            return None
+        success, frame = camera.read()
+        return frame if success else None
 
 
 def generate_capture_filename(step_number=None):
@@ -113,7 +117,7 @@ def encode_frame():
 
 def release():
     global camera
-
-    if camera is not None:
-        camera.release()
-        camera = None
+    with _camera_lock:
+        if camera is not None:
+            camera.release()
+            camera = None
