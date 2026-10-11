@@ -46,6 +46,7 @@ from scanner_core.hardware_gate import hardware_gate
 from scanner_core.calibration_workflow import RUN_DIR as CALIB_RUN_DIR
 from flask import send_file
 from scanner_core.calibration_geometry import CalibrationFailure, find_board
+from scanner_core.real_reconstruction import reconstruct_latest, ReconstructionError
 import cv2
 from scanner_core.viewer import get_viewer_status
 from scanner_core.laser_detection import analyze_laser_frame
@@ -777,6 +778,78 @@ def calibration_workflow_reset():
         return api_success("Calibration photo dataset reset; saved profiles kept.")
     except CalibrationFailure as error:
         return api_error(str(error), status_code=409)
+
+
+# Physical laser reconstruction is deliberately separate from demo PLY generation.
+_reconstruction_state_lock = threading.Lock()
+_reconstruction_state = {
+    "running": False, "done": 0, "total": 0,
+    "message": "No real reconstruction requested yet.", "error": None, "result": None,
+}
+
+
+def _reconstruction_progress(done, total):
+    with _reconstruction_state_lock:
+        _reconstruction_state.update({
+            "done": done, "total": total,
+            "message": f"Triangulating laser photos: {done}/{total}",
+        })
+
+
+def _reconstruction_worker():
+    try:
+        result = reconstruct_latest(progress_callback=_reconstruction_progress)
+        with _reconstruction_state_lock:
+            _reconstruction_state["result"] = result
+            _reconstruction_state["message"] = (
+                f"REAL point cloud generated: {result['points']} points from "
+                f"{result['usable_frames']} physical images."
+            )
+        scanner_state["point_cloud_generated"] = True
+        scanner_state["last_point_cloud"] = os.path.join(
+            POINT_CLOUD_FOLDER, result["file"]
+        )
+        add_log(f"REAL PLY generated: {result['file']}")
+    except Exception as error:
+        with _reconstruction_state_lock:
+            _reconstruction_state["error"] = str(error)
+            _reconstruction_state["message"] = f"Real reconstruction failed: {error}"
+        add_log(f"Real reconstruction rejected: {error}")
+    finally:
+        with _reconstruction_state_lock:
+            _reconstruction_state["running"] = False
+        hardware_gate.release()
+
+
+@app.route("/api/reconstruction/start", methods=["POST"])
+def reconstruct_real_scan():
+    if not hardware_gate.acquire(blocking=False):
+        return api_error("Wait for scan/calibration to finish.", status_code=409)
+    try:
+        # Reject invalid/missing inputs before launching the expensive job.
+        from scanner_core.real_reconstruction import load_calibration, find_recent_real_session
+        load_calibration()
+        find_recent_real_session()
+        with _reconstruction_state_lock:
+            _reconstruction_state.update({
+                "running": True, "done": 0, "total": 0, "error": None,
+                "result": None, "message": "Loading real physical captures...",
+            })
+        thread = threading.Thread(target=_reconstruction_worker, daemon=True)
+        thread.start()
+        return api_success("Real reconstruction started.")
+    except ReconstructionError as error:
+        hardware_gate.release()
+        return api_error(str(error), status_code=422)
+    except Exception:
+        hardware_gate.release()
+        raise
+
+
+@app.route("/api/reconstruction/status")
+def reconstruction_status():
+    with _reconstruction_state_lock:
+        return api_success("Real reconstruction progress.", data=_reconstruction_state.copy())
 
 
 @app.route("/viewer/status")
