@@ -228,8 +228,15 @@ def calibrate_camera_from_detections(
     *,
     source: str = "checkerboard",
     notes: str = "",
+    flags: int = 0,
 ) -> CameraCalibration:
-    """Run ``cv2.calibrateCamera`` and build a :class:`CameraCalibration`."""
+    """Run ``cv2.calibrateCamera`` and build a :class:`CameraCalibration`.
+
+    ``flags`` is passed to OpenCV.  ``cv2.CALIB_FIX_K3`` matters when the board
+    only ever covers part of the image (a board standing on the turntable): a
+    free ``k3`` fits the covered region and then diverges by hundreds of pixels
+    towards the image edges.
+    """
 
     if len(detections) < 5:
         raise CalibrationError(
@@ -256,6 +263,7 @@ def calibrate_camera_from_detections(
         image_size,
         None,
         None,
+        flags=flags,
     )
 
     per_view_errors: list[float] = []
