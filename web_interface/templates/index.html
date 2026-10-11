@@ -50,6 +50,7 @@
     input { background:#0e1a2d; color:var(--text); border:1px solid #50647f; border-radius:6px;
       padding:9px; width:90px; }
     label { font-size:13px; color:var(--muted); }
+    input[type="checkbox"] { width:auto; accent-color:var(--blue); }
     .settings { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .result { white-space:pre-wrap; font:13px/1.5 ui-monospace,Consolas,monospace;
       overflow-wrap:anywhere; color:#b8d0eb; }
@@ -106,18 +107,19 @@
     <div class="stack">
       <section class="card">
         <h2>1. Calibrar · só tabuleiro vertical</h2>
-        <p class="muted note">Tabuleiro 9 × 6 cantos internos. Não inclinar. A face quadriculada deve estar apontada para a câmera antes de começar.</p>
+        <p class="muted note">Tabuleiro vertical, 9 × 6 cantos. Primeiro procura o limite à direita; volta ao centro e fotografa apenas indo para a esquerda. Pausa de 0,40 s depois de cada movimento.</p>
         <div class="settings">
           <label for="square">Lado do quadradinho</label>
           <input id="square" type="number" min="1" max="100" step=".01" value="10.00">
           <span class="muted">mm</span>
+          <label><input id="invertRight" type="checkbox"> Inverter giro direita/esquerda</label>
         </div>
         <div class="step">
           <div class="meta">
             <strong>A. Câmera + eixo</strong>
             <span class="status" id="cameraStatus">Não calibrados</span>
           </div>
-          <p>Luz branca ligada, laser vermelho e luz verde desligados. Gira apenas pela faixa útil; fotografa e calcula automaticamente.</p>
+          <p>Luz branca ligada, lasers desligados. Procura o limite à direita e captura à esquerda. Na primeira movimentação, confira o sentido físico; se estiver invertido, pare e marque “Inverter giro”.</p>
           <button id="camera" class="primary" onclick="captureCalibration('camera')">Calibrar câmera + eixo</button>
           <p id="cameraStage" class="muted note"></p>
         </div>
@@ -199,11 +201,12 @@
     const instructions = kind === "camera"
       ? "Tabuleiro VERTICAL de frente para a câmera. LUZ BRANCA LIGADA, laser VERMELHO DESLIGADO, verde DESLIGADA."
       : "Tabuleiro VERTICAL de frente para a câmera. LASER VERMELHO LIGADO sobre o tabuleiro, iluminação suficiente para ler os quadrados.";
-    if (!confirm(instructions + "\nO motor fará movimentos curtos e retornará à posição inicial. Começar?")) return;
+    if (!confirm(instructions + "\nSequência: gira à DIREITA procurando o limite visível; retorna ao CENTRO; gira à ESQUERDA, parando para fotografar. Após cada movimento aguarda 0,40 s.\nConfirme que o motor realmente girará à direita; caso contrário use Inverter giro. Continuar?")) return;
     pending(kind, true);
     try {
-      await api("/api/calibration/workflow/capture", {kind:kind, placement:1, square_size_mm:square});
-      feedback("Capturando fotos reais. Depois o sistema calculará a calibração automaticamente.","info");
+      await api("/api/calibration/workflow/capture", {kind:kind, placement:1, square_size_mm:square,
+        right_direction:byId("invertRight").checked ? -1 : 1});
+      feedback("Buscando limite à direita, voltando ao centro e fotografando à esquerda. Não mova a câmera nem o tabuleiro.","info");
     } catch(e) { feedback(e.message,"error"); }
     finally { pending(kind,false); await refresh(); }
   }
