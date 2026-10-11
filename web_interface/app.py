@@ -738,6 +738,7 @@ def calibration_workflow_capture():
             str(payload.get("kind", "")),
             int(payload.get("placement", 0)),
             payload.get("square_size_mm", 10.0),
+            payload.get("right_direction", 1),
         )
         return api_success("Calibration photo capture started.")
     except (CalibrationFailure, TypeError, ValueError) as error:
