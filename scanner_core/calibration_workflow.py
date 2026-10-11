@@ -1,13 +1,15 @@
-"""Fast functional-first calibration from ONE rigid UPRIGHT checkerboard.
+"""Upright-only calibration: discover visibility to the RIGHT, capture LEFT.
 
-Capture a full rotation first, process the photographs after the motor stops.
-Use normal white illumination for camera+axis, and visible red laser for plane.
-The chessboard must be offset from the rotation axis and mechanically stable.
+Workflow (no encoder): start from the checkerboard facing the fixed webcam,
+probe right until the pattern is consistently absent, return to the original
+motor position, and take sharp photographs while moving left until absent.
+This is an experimental, single-pose calibration with geometry quality gates.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import threading
 import time
 from datetime import datetime
@@ -32,10 +34,15 @@ RUN_FILE = RUN_DIR / "run.json"
 CAMERA_FILE = OUTPUT / "camera_calibration.json"
 AXIS_FILE = OUTPUT / "turntable_calibration.json"
 LASER_FILE = OUTPUT / "laser_calibration.json"
-STOPS = 36
-# The board faces the camera initially, then turns just 120 degrees.
-VISIBLE_SWEEP_DEGREES = 120.0
-SETTLE_SECONDS = 0.18
+# The sign for RIGHT is an installation convention. If +1 physically turns
+# left in the user's device, change this to -1 *before* starting calibration.
+RIGHT_DIRECTION = 1
+RIGHT_SEARCH_STEP_DEG = 5.0
+LEFT_CAPTURE_STEP_DEG = 3.0
+MAX_SIDE_DEGREES = 110.0
+LOST_CONFIRMATIONS = 3
+STOPS = 36  # Maximum photos, not forced stops or a full 360-degree rotation.
+SETTLE_SECONDS = 0.40
 PHOTOS_AT_LEAST = 8
 
 _state_lock = threading.RLock()
@@ -103,8 +110,14 @@ def calibration_status():
         "run": state,
         "square_size_mm": run.get("square_size_mm"),
         "board": [BOARD_COLUMNS, BOARD_ROWS],
+        "max_photos": STOPS,
         "stops_per_revolution": STOPS,
-        "visible_sweep_degrees": VISIBLE_SWEEP_DEGREES,
+        "right_search_step_deg": RIGHT_SEARCH_STEP_DEG,
+        "left_capture_step_deg": LEFT_CAPTURE_STEP_DEG,
+        "max_side_degrees": MAX_SIDE_DEGREES,
+        "settle_seconds": SETTLE_SECONDS,
+        "right_direction": RIGHT_DIRECTION,
+        "run_status": (run.get("stages", {}).get("camera1") or {}).get("status"),
         "stages": completed,
         "preflight_preview_url": (
             "/api/calibration/workflow/preflight-preview"
@@ -146,7 +159,7 @@ def start_capture(kind, placement, square_mm):
         _stop.clear()
         _set_state(running=True, operation=f"capture_{kind}", placement=placement,
                    done=0, total=STOPS, board_found=0, error=None,
-                   message=f"Capturing {kind} position {placement}...")
+                   message=f"Checking the right visibility limit, then photographing left ({kind})...")
         thread = threading.Thread(
             target=_capture_worker, args=(kind, placement, square),
             name=f"calibration-{kind}-{placement}", daemon=True
@@ -157,13 +170,63 @@ def start_capture(kind, placement, square_mm):
         raise
 
 
+
+def _motor_target_steps(angle_degrees):
+    """Command an angle relative to the upright starting position."""
+    return round(
+        MOTOR_HALF_STEPS_PER_REV * float(angle_degrees) / 360.0
+    )
+
+
+def _settle():
+    """Wait for vibration to stop; keep Stop Calibration responsive."""
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        if _stop.is_set():
+            raise MotorInterrupted("Calibration stopped by user.")
+        time.sleep(min(0.025, max(0, deadline - time.monotonic())))
+
+
+def _capture_at(motor, desired_angle_deg):
+    """Move; let the platform settle; discard one stale camera frame; read."""
+    desired_steps = _motor_target_steps(desired_angle_deg)
+    motor.move(desired_steps - motor.position, cancelled=_stop.is_set)
+    _settle()
+    camera_device.get_frame()
+    frame = camera_device.get_frame()
+    if frame is None:
+        raise CalibrationFailure("USB webcam returned no image after motor movement.")
+    return frame
+
+
+def _archive_previous_stage(run, stage_key, folder):
+    """Preserve previous photographs and manifest rather than deleting them."""
+    if not folder.exists() and stage_key not in run.get("stages", {}):
+        return
+    archive = RUN_DIR / "history" / (
+        f"{stage_key}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    )
+    archive.mkdir(parents=True, exist_ok=False)
+    previous = (run.get("stages") or {}).get(stage_key)
+    if previous is not None:
+        _save_json(archive / "stage_metadata.json", previous)
+    if folder.exists():
+        shutil.move(str(folder), str(archive / "photos"))
+    add_log(f"Previous calibration photographs preserved: {archive}")
+
+
 def _capture_worker(kind, placement, square):
-    key = f"{kind}{placement}"
-    record = {"status": "running", "frames": [], "error": None}
+    stage_key = f"{kind}{placement}"
+    record = {
+        "status": "running", "frames": [], "error": None,
+        "trajectory": "right-visibility-search -> center -> left-photos",
+        "right_direction": RIGHT_DIRECTION,
+        "settle_seconds": SETTLE_SECONDS,
+    }
     run = None
     try:
         run = _load_json(RUN_FILE, {}) or {
-            "schema_version": 1,
+            "schema_version": 2,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "square_size_mm": square,
             "steps_per_revolution": MOTOR_HALF_STEPS_PER_REV,
@@ -171,92 +234,150 @@ def _capture_worker(kind, placement, square):
             "stages": {},
         }
         if int(run.get("steps_per_revolution", MOTOR_HALF_STEPS_PER_REV)) != MOTOR_HALF_STEPS_PER_REV:
-            raise CalibrationFailure("Motor steps/revolution changed. Reset the photo dataset.")
-        run.setdefault("stages", {})[key] = record
-        folder = RUN_DIR / key
+            raise CalibrationFailure("Motor steps per turn changed; use a fresh dataset.")
+        folder = RUN_DIR / stage_key
+        _archive_previous_stage(run, stage_key, folder)
         folder.mkdir(parents=True, exist_ok=True)
-        for previous in folder.glob("frame_*.jpg"):
-            previous.unlink()
         diag = RUN_DIR / "diagnostics"
         diag.mkdir(parents=True, exist_ok=True)
-        overlay_file = diag / f"{key}.jpg"
+        overlay_file = diag / f"{stage_key}.jpg"
         if overlay_file.exists():
             overlay_file.unlink()
+        run.setdefault("stages", {})[stage_key] = record
         _save_json(RUN_FILE, run)
 
-        # Acquisition must be as quick as is safely possible: stop, settle,
-        # discard one buffered frame, take one photo. Detect corners AFTER motor
-        # movement so expensive OpenCV work never delays the next movement.
         with TurntableMotor(phase_delay=MOTOR_PHASE_DELAY) as motor:
-            for i in range(STOPS):
+            # The user's starting position is the FRONT and position zero.
+            initial = _capture_at(motor, 0)
+            front_corners = find_board(initial)
+            if front_corners is None:
+                raise CalibrationFailure(
+                    "At position zero the 9x6 board is not visible. "
+                    "Point its printed face at the camera and press Check Board."
+                )
+
+            # 1. Probe RIGHT to discover when the pattern disappears.
+            # Do not record these diagnostic frames as calibration data.
+            missing = 0
+            right_last_visible = 0.0
+            probe_count = int(MAX_SIDE_DEGREES // RIGHT_SEARCH_STEP_DEG)
+            _set_state(
+                operation=f"search_right_{kind}", done=0, total=probe_count,
+                message="Searching RIGHT boundary. Motor + direction must be physically right.",
+            )
+            for n in range(1, probe_count + 1):
                 if _stop.is_set():
-                    raise MotorInterrupted("Calibration stopped by user.")
-                target = round(i * MOTOR_HALF_STEPS_PER_REV * VISIBLE_SWEEP_DEGREES / 360.0 / (STOPS - 1))
-                motor.move(target - motor.position, cancelled=_stop.is_set)
-                deadline = time.monotonic() + SETTLE_SECONDS
-                while time.monotonic() < deadline:
-                    if _stop.is_set():
-                        raise MotorInterrupted("Calibration stopped by user.")
-                    time.sleep(min(0.025, deadline - time.monotonic()))
-                # Drop just one possible stale buffer, not 3+ expensive reads.
-                camera_device.get_frame()
-                frame = camera_device.get_frame()
-                if frame is None:
-                    raise CalibrationFailure("The USB webcam returned no frame.")
-                file = folder / f"frame_{i:03d}.jpg"
-                if not cv2.imwrite(str(file), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92]):
-                    raise CalibrationFailure(f"Could not save {file}.")
+                    raise MotorInterrupted("Stop requested while searching right.")
+                target_angle = RIGHT_DIRECTION * n * RIGHT_SEARCH_STEP_DEG
+                frame = _capture_at(motor, target_angle)
+                visible = find_board(frame) is not None
+                if visible:
+                    right_last_visible = abs(target_angle)
+                    missing = 0
+                else:
+                    missing += 1
+                _set_state(
+                    done=n, total=probe_count,
+                    message=(f"RIGHT search {abs(target_angle):.0f} deg; "
+                             f"pattern {'found' if visible else 'missing'} "
+                             f"({missing}/{LOST_CONFIRMATIONS} consecutive misses)."),
+                )
+                if missing >= LOST_CONFIRMATIONS:
+                    break
+
+            record["right_last_visible_deg"] = right_last_visible
+            if right_last_visible < 20:
+                raise CalibrationFailure(
+                    f"Board disappeared on the right after {right_last_visible:.1f} deg. "
+                    "Check illumination, fixation and physical motor direction."
+                )
+
+            # 2. Return to center, verify the board was not lost mechanically.
+            _set_state(
+                operation=f"return_center_{kind}", done=0, total=1,
+                message="Right limit located. Returning to the original front position...",
+            )
+            frame = _capture_at(motor, 0)
+            if find_board(frame) is None:
+                raise CalibrationFailure(
+                    "Board was not visible after returning to center. "
+                    "Check missed motor steps, gear backlash and board rigidity."
+                )
+
+            # 3. Move LEFT, stop after 3 consecutive invisible frames.
+            # Store ONLY recognized photo positions. Failed visibility
+            # checks do not waste disk and do not count as valid photographs.
+            _set_state(
+                operation=f"capture_{kind}", done=0, total=STOPS,
+                board_found=0, message="Center reached. Photographing toward LEFT...",
+            )
+            missing = 0
+            last_left_visible_deg = 0.0
+            for n in range(STOPS):
+                if _stop.is_set():
+                    raise MotorInterrupted("Stop requested while photographing left.")
+                left_angle = -RIGHT_DIRECTION * n * LEFT_CAPTURE_STEP_DEG
+                if abs(left_angle) > MAX_SIDE_DEGREES:
+                    break
+                frame = _capture_at(motor, left_angle)
+                corners = find_board(frame)
+                if corners is None:
+                    missing += 1
+                    _set_state(
+                        message=(f"LEFT: no board at {abs(left_angle):.0f} deg "
+                                 f"({missing}/{LOST_CONFIRMATIONS} consecutive misses)."),
+                    )
+                    if missing >= LOST_CONFIRMATIONS:
+                        break
+                    continue
+
+                missing = 0
+                last_left_visible_deg = abs(left_angle)
+                file = folder / f"frame_{len(record['frames']):03d}.jpg"
+                if not cv2.imwrite(str(file), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]):
+                    raise CalibrationFailure(f"Could not save photograph: {file}")
                 record["frames"].append({
                     "filename": file.relative_to(RUN_DIR).as_posix(),
                     "angle_deg": motor.position * 360.0 / MOTOR_HALF_STEPS_PER_REV,
                     "half_steps": motor.position,
                     "image_size": [frame.shape[1], frame.shape[0]],
-                    "corners": None,
+                    "corners": np.round(corners.reshape(-1, 2), 4).tolist(),
                 })
-                _save_json(RUN_FILE, run)
-                _set_state(done=i + 1, message=f"Rotating and photographing: {i+1}/{STOPS} ({key}).")
-            # Restore approximate start orientation so the next manual
-            # illumination stage can begin without repositioning the board.
-            # Reverse motion on this gearbox may exhibit backlash.
-            if not _stop.is_set():
-                _set_state(message="Returning checkerboard to its starting position...")
-                motor.move(-motor.position, cancelled=_stop.is_set)
-
-        _set_state(
-            operation=f"analyze_{kind}", done=0, total=STOPS,
-            message=f"Rotation complete. Identifying board corners in {STOPS} saved photos...",
-        )
-        for i, item in enumerate(record["frames"]):
-            if _stop.is_set():
-                raise MotorInterrupted("Stopped while analyzing saved photographs.")
-            file = RUN_DIR / item["filename"]
-            frame = cv2.imread(str(file), cv2.IMREAD_COLOR)
-            if frame is None:
-                raise CalibrationFailure(f"Cannot read saved calibration photo: {file}")
-            corners = find_board(frame)
-            if corners is not None:
-                item["corners"] = np.round(corners.reshape(-1, 2), 4).tolist()
                 overlay = frame.copy()
                 cv2.drawChessboardCorners(
                     overlay, (BOARD_COLUMNS, BOARD_ROWS), corners, True
                 )
                 cv2.imwrite(str(overlay_file), overlay)
-            _save_json(RUN_FILE, run)
-            recognized = sum(bool(x["corners"]) for x in record["frames"])
-            _set_state(
-                done=i + 1, board_found=recognized,
-                message=f"Analyzing saved photos: {i+1}/{STOPS}; board in {recognized}.",
-            )
+                _save_json(RUN_FILE, run)
+                count = len(record["frames"])
+                _set_state(
+                    done=count, board_found=count,
+                    message=(f"LEFT photographed {count}/{STOPS} useful images "
+                             f"(angle {abs(left_angle):.0f} deg)."),
+                )
+
+            record["left_last_visible_deg"] = last_left_visible_deg
+            record["photos_recognized"] = len(record["frames"])
+            # No automatic return when user requests Stop; return only
+            # after a normal scan to avoid leaving the board at an angle.
+            if not _stop.is_set():
+                _set_state(
+                    operation=f"return_center_{kind}",
+                    message="LEFT capture finished. Returning to front position...",
+                )
+                _capture_at(motor, 0)
+
         record["status"] = "complete"
         _save_json(RUN_FILE, run)
-        found_count = sum(bool(f["corners"]) for f in record["frames"])
+        count = len(record["frames"])
         _set_state(
             operation=f"compute_{kind}", done=0, total=1,
-            message=f"{key}: {found_count}/{STOPS} photos recognized. Calculating geometry..."
+            message=(f"Saved {count} sharp, recognized photos. "
+                     f"Computing {kind} calibration now..."),
         )
-        # One click captures AND computes this calibration stage. No manual
-        # compute action is required unless reusing an old dataset.
+        # Capture and numerical calibration share one user action.
         _compute_worker(kind, release_gate=False)
+
     except MotorInterrupted as error:
         record["status"] = "stopped"
         record["error"] = str(error)
@@ -264,14 +385,13 @@ def _capture_worker(kind, placement, square):
     except Exception as error:
         record["status"] = "error"
         record["error"] = str(error)
-        _set_state(message=f"Calibration capture error: {error}", error=str(error))
-        add_log(f"Calibration capture failed: {error}")
+        _set_state(message=f"Calibration failed: {error}", error=str(error))
+        add_log(f"Calibration failed: {error}")
     finally:
         if run is not None:
             _save_json(RUN_FILE, run)
         _set_state(running=False)
         hardware_gate.release()
-
 
 def _read_observations(record):
     result = []
