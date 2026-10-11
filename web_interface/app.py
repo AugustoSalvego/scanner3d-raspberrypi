@@ -276,24 +276,30 @@ def reset_camera():
     )
 
 
+# Prevent two HTTP requests from starting two capture threads simultaneously.
+_scan_start_lock = threading.Lock()
+
+
+def _run_scan_exclusive():
+    try:
+        execute_scan()
+    finally:
+        _scan_start_lock.release()
+
+
 @app.route("/start-scan", methods=["POST"])
 def start_scan():
-    if scanner_state.get("running"):
-        return api_error(
-            message="Scan is already running",
-            status_code=409
-        )
+    if not _scan_start_lock.acquire(blocking=False):
+        return api_error(message="Scan is already running", status_code=409)
 
-    thread = threading.Thread(
-        target=execute_scan,
-        daemon=True
-    )
+    try:
+        thread = threading.Thread(target=_run_scan_exclusive, daemon=True)
+        thread.start()
+    except Exception:
+        _scan_start_lock.release()
+        raise
 
-    thread.start()
-
-    return api_success(
-        message="Scan started successfully"
-    )
+    return api_success(message="Scan requested; acquisition will start shortly.")
 
 
 @app.route("/stop-scan", methods=["POST"])
@@ -676,7 +682,8 @@ if __name__ == "__main__":
     create_default_calibration_files()
 
     app.run(
-        debug=True,
+        debug=False,
+        use_reloader=False,
         host="0.0.0.0",
         port=5000
     )
