@@ -45,7 +45,8 @@ from scanner_core.calibration_workflow import (
 from scanner_core.hardware_gate import hardware_gate
 from scanner_core.calibration_workflow import RUN_DIR as CALIB_RUN_DIR
 from flask import send_file
-from scanner_core.calibration_geometry import CalibrationFailure
+from scanner_core.calibration_geometry import CalibrationFailure, find_board
+import cv2
 from scanner_core.viewer import get_viewer_status
 from scanner_core.laser_detection import analyze_laser_frame
 from scanner_core.laser_detection import encode_laser_mask
@@ -681,6 +682,44 @@ def calibration_status():
         },
         calibration=status
     )
+
+@app.route("/api/calibration/workflow/check-board", methods=["POST"])
+def calibration_check_board():
+    """No motor movement: verify all 54 corners are visible before a full sweep."""
+    if not hardware_gate.acquire(blocking=False):
+        return api_error("Scanner busy: wait for the motor to stop.", status_code=409)
+    try:
+        frame = get_frame()
+        if frame is None:
+            return api_error("Camera unavailable. Check USB connection.", status_code=503)
+        corners = find_board(frame)
+        found = corners is not None and len(corners) == 54
+        if found:
+            marked = frame.copy()
+            cv2.drawChessboardCorners(marked, (9, 6), corners, True)
+            diag = CALIB_RUN_DIR / "diagnostics"
+            diag.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(diag / "preflight.jpg"), marked)
+        return api_success(
+            "54 chessboard corners detected." if found else
+            "Board not recognized. Improve white light and show the entire 9x6 pattern.",
+            data={"board_detected": found, "corners_found": 54 if found else 0,
+                  "image_size": [frame.shape[1], frame.shape[0]],
+                  "preview_url": "/api/calibration/workflow/preflight-preview" if found else None},
+        )
+    except Exception as error:
+        return api_error(f"Checkerboard test failed: {error}", status_code=422)
+    finally:
+        hardware_gate.release()
+
+
+@app.route("/api/calibration/workflow/preflight-preview")
+def calibration_check_board_preview():
+    path = CALIB_RUN_DIR / "diagnostics" / "preflight.jpg"
+    if not path.is_file():
+        return api_error("No checkerboard test image saved.", status_code=404)
+    return send_file(path, mimetype="image/jpeg", conditional=False)
+
 
 @app.route("/api/calibration/workflow", methods=["GET"])
 def calibration_workflow_status():
