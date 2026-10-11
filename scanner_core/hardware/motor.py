@@ -153,9 +153,9 @@ class SimulatedMotor(_BaseMotor):
         direction: int,
         should_cancel: Callable[[], bool] | None,
     ) -> None:
-        effective = direction * self.config.direction
-
-        # Check cancellation on a coarse grid; a simulated move is instant.
+        # ``motor.direction`` describes how the coils are wired, which has no
+        # meaning for a motor that only exists in software.  The position is
+        # always kept in logical (commanded) steps.
         chunk = max(1, magnitude // 20)
         moved = 0
 
@@ -167,7 +167,7 @@ class SimulatedMotor(_BaseMotor):
             moved += step
 
             with self._lock:
-                self._position += effective * step
+                self._position += direction * step
 
             if self._simulate_timing:
                 time.sleep(self.config.step_delay * step)
@@ -281,6 +281,11 @@ class HalfStepMotor28BYJ48(_BaseMotor):
         if not self._pins:
             raise MotorError("Motor pins are not claimed; call open() first.")
 
+        # ``effective`` only decides which way the coil sequence is walked, so a
+        # motor wired "backwards" can be corrected in the configuration.  The
+        # bookkeeping below stays in logical steps: if it followed ``effective``
+        # instead, move_to() would compute every delta against a sign-flipped
+        # position and each move would grow (68, 204, 476... steps).
         effective = direction * self.config.direction
         delay = self.config.step_delay
         sequence_length = len(HALF_STEP_SEQUENCE)
@@ -297,7 +302,7 @@ class HalfStepMotor28BYJ48(_BaseMotor):
                 self._apply_phase(HALF_STEP_SEQUENCE[self._sequence_index])
 
                 with self._lock:
-                    self._position += effective
+                    self._position += direction
 
                 self._released = False
 

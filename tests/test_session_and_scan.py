@@ -233,14 +233,27 @@ class TestSimulatedMotor:
 
         assert motor.angle_for_position() == pytest.approx(90.0)
 
-    def test_direction_is_applied(self):
+    def test_position_is_logical_whatever_the_wiring_direction(self):
+        # ``motor.direction`` describes the wiring.  The position the pipeline
+        # reads must stay in commanded (logical) steps, otherwise move_to()
+        # computes its delta against a sign-flipped position and never lands.
         config = MotorConfig(direction=-1)
         motor = SimulatedMotor(config)
         motor.open()
 
         motor.move_relative(100)
 
-        assert motor.position == -100
+        assert motor.position == 100
+
+    @pytest.mark.parametrize("direction", [1, -1])
+    def test_absolute_moves_converge_in_both_directions(self, direction):
+        motor = SimulatedMotor(MotorConfig(direction=direction))
+        motor.open()
+
+        for target in (0, 68, 136, 204, 273, 341, 4096):
+            motor.move_to(target)
+
+            assert motor.position == target
 
     def test_cancellation_raises(self):
         motor = SimulatedMotor(MotorConfig())
