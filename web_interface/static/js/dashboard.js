@@ -29,6 +29,7 @@
     busy: false,
     auto: null,
     autoTimer: null,
+    autoWatching: false,
   };
 
   // ------------------------------------------------------------------ utils
@@ -309,7 +310,7 @@
     } else {
       note.textContent =
         "Physical scanning stays blocked until all three calibrations are valid. " +
-        "See docs/calibration.md for the step by step procedure.";
+        "See docs/automatic-calibration.md for the step by step procedure.";
     }
 
     const issues = $("calibrationIssues");
@@ -1122,6 +1123,21 @@
 
       renderAutoCalibration(state.auto);
       applyControlState();
+
+      // A step that ends - including one that fails within a second, before
+      // the platform even moves - must say so loudly, not only in the small
+      // status line.
+      const progress = state.auto.progress || {};
+
+      if (state.autoWatching && !progress.running) {
+        state.autoWatching = false;
+
+        if (progress.error) {
+          toast(progress.message + " " + progress.error, "error");
+        } else if (progress.message) {
+          toast(progress.message, /cancelled/.test(progress.message) ? "warning" : "success");
+        }
+      }
     } catch (error) {
       /* the status poll already reports connectivity problems */
     }
@@ -1186,6 +1202,8 @@
     }
 
     text("autoProgress", lines.join("  "));
+
+    $("autoProgress").style.color = progress.error ? "var(--danger)" : "";
 
     renderAutoResult(run.result, data.diagnostics_urls || []);
   }
@@ -1299,6 +1317,8 @@
   function startAutoStep(number) {
     return action(async () => {
       await postJson("/api/calibration/auto/step/" + number, boardPayload());
+
+      state.autoWatching = true;
 
       toast("Step " + number + " started: the platform turns once.", "info");
 
