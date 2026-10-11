@@ -91,6 +91,33 @@ class TurntableEstimate:
         }
 
 
+def _contiguous_arc(commanded_deg: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Order commanded angles along the arc they cover, unwrapped.
+
+    A board standing on the turntable is only visible for part of the
+    revolution, and that part usually straddles 0/360 degrees (for example
+    300, 315 ... 345, 0, 15 ... 60).  Sorted naively, the jump from 60 to 300
+    looks like the platform turning backwards and flips the measured rotation
+    sense.  The arc is cut at its largest gap instead, and angles after the cut
+    continue past 360.
+
+    Returns ``(order, angles)`` with ``angles`` increasing.
+    """
+
+    wrapped = np.mod(np.asarray(commanded_deg, dtype=np.float64), 360.0)
+    order = np.argsort(wrapped, kind="stable")
+    ordered = wrapped[order]
+
+    gaps = np.diff(np.concatenate([ordered, [ordered[0] + 360.0]]))
+    start = (int(np.argmax(gaps)) + 1) % len(ordered)
+
+    order = np.roll(order, -start)
+    angles = wrapped[order]
+    angles = np.where(angles < angles[0], angles + 360.0, angles)
+
+    return order, angles
+
+
 def estimate_turntable_axis(
     observations: Sequence[AxisObservation],
     configured_steps_per_revolution: int,
@@ -127,8 +154,7 @@ def estimate_turntable_axis(
 
     measured = np.degrees(np.arctan2(local[:, 1], local[:, 0]))
 
-    order = np.argsort(commanded)
-    commanded_sorted = commanded[order]
+    order, commanded_sorted = _contiguous_arc(commanded)
     measured_sorted = np.unwrap(np.radians(measured[order]))
     measured_sorted = np.degrees(measured_sorted)
 

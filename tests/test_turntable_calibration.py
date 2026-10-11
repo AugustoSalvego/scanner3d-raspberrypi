@@ -100,6 +100,28 @@ class TestAxisOrientation:
             assert float(estimate.axis_direction @ axis) > 0.995
             assert estimate.rotation_direction == sense
 
+    @pytest.mark.parametrize("sense", [1, -1])
+    def test_an_arc_straddling_zero_keeps_the_right_rotation_sense(self, sense):
+        """A board is only seen for part of a revolution, usually across 0/360."""
+
+        axis = orient_axis_upward(np.array([0.0, -1.0, -0.2]))
+        origin = np.array([0.0, 60.0, 180.0])
+        start = np.array([35.0, 0.0, 0.0])
+
+        observations = [
+            AxisObservation(
+                commanded_angle_deg=angle,
+                point_camera=origin + rotation_matrix_about_axis(axis, np.radians(angle) * sense) @ start,
+            )
+            for angle in (300, 315, 330, 345, 0, 15, 30, 45, 60)
+        ]
+
+        estimate = estimate_turntable_axis(observations, 4096)
+
+        assert estimate.rotation_direction == sense
+        assert estimate.angle_scale == pytest.approx(1.0, abs=1e-6)
+        assert estimate.suggested_steps_per_revolution is None
+
     def test_orientation_keeps_an_upward_axis_and_flips_a_downward_one(self):
         up = np.array([0.0, -0.98, -0.2])
 
