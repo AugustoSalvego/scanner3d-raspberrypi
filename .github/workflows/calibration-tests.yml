@@ -1,0 +1,26 @@
+name: Calibration geometry tests
+
+on:
+  push:
+    branches: [chatgpt-version]
+  workflow_dispatch:
+
+jobs:
+  geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deterministic test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy opencv-python-headless pytest flask
+      - name: Validate Python syntax
+        run: |
+          python -m compileall -q scanner_core web_interface tests
+      - name: Test calibration geometry
+        run: |
+          python -m pytest tests/test_calibration_geometry.py -q
