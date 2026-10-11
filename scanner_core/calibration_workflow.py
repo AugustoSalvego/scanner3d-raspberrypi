@@ -116,7 +116,7 @@ def calibration_status():
         "left_capture_step_deg": LEFT_CAPTURE_STEP_DEG,
         "max_side_degrees": MAX_SIDE_DEGREES,
         "settle_seconds": SETTLE_SECONDS,
-        "right_direction": direction,
+        "right_direction": RIGHT_DIRECTION,
         "run_status": (run.get("stages", {}).get("camera1") or {}).get("status"),
         "stages": completed,
         "preflight_preview_url": (
@@ -227,7 +227,7 @@ def _capture_worker(kind, placement, square, right_direction=None):
     record = {
         "status": "running", "frames": [], "error": None,
         "trajectory": "right-visibility-search -> center -> left-photos",
-        "right_direction": RIGHT_DIRECTION,
+        "right_direction": direction,
         "settle_seconds": SETTLE_SECONDS,
     }
     run = None
