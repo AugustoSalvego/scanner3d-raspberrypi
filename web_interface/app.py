@@ -35,6 +35,15 @@ from web_interface.api_response import api_success
 from web_interface.api_response import api_error
 from scanner_core.calibration import get_calibration_status
 from scanner_core.calibration import create_default_calibration_files
+from scanner_core.calibration_workflow import (
+    calibration_status as detailed_calibration_status,
+    start_capture as start_calibration_capture,
+    start_compute as start_calibration_compute,
+    stop_calibration as request_calibration_stop,
+    reset_photos as reset_calibration_photos,
+)
+from scanner_core.hardware_gate import hardware_gate
+from scanner_core.calibration_geometry import CalibrationFailure
 from scanner_core.viewer import get_viewer_status
 from scanner_core.laser_detection import analyze_laser_frame
 from scanner_core.laser_detection import encode_laser_mask
@@ -284,6 +293,7 @@ def _run_scan_exclusive():
     try:
         execute_scan()
     finally:
+        hardware_gate.release()
         _scan_start_lock.release()
 
 
@@ -291,11 +301,15 @@ def _run_scan_exclusive():
 def start_scan():
     if not _scan_start_lock.acquire(blocking=False):
         return api_error(message="Scan is already running", status_code=409)
+    if not hardware_gate.acquire(blocking=False):
+        _scan_start_lock.release()
+        return api_error(message="Hardware busy: calibration or another operation is active.", status_code=409)
 
     try:
         thread = threading.Thread(target=_run_scan_exclusive, daemon=True)
         thread.start()
     except Exception:
+        hardware_gate.release()
         _scan_start_lock.release()
         raise
 
@@ -665,6 +679,54 @@ def calibration_status():
         },
         calibration=status
     )
+
+@app.route("/api/calibration/workflow", methods=["GET"])
+def calibration_workflow_status():
+    try:
+        return api_success("Current calibration progress.", data=detailed_calibration_status())
+    except CalibrationFailure as error:
+        return api_error(str(error), status_code=422)
+
+
+@app.route("/api/calibration/workflow/capture", methods=["POST"])
+def calibration_workflow_capture():
+    payload = request.get_json(silent=True) or {}
+    try:
+        start_calibration_capture(
+            str(payload.get("kind", "")),
+            int(payload.get("placement", 0)),
+            payload.get("square_size_mm", 10.0),
+        )
+        return api_success("Calibration photo capture started.")
+    except (CalibrationFailure, TypeError, ValueError) as error:
+        return api_error(str(error), status_code=409)
+
+
+@app.route("/api/calibration/workflow/compute", methods=["POST"])
+def calibration_workflow_compute():
+    payload = request.get_json(silent=True) or {}
+    try:
+        start_calibration_compute(str(payload.get("kind", "")))
+        return api_success("Calibration computation started.")
+    except CalibrationFailure as error:
+        return api_error(str(error), status_code=409)
+
+
+@app.route("/api/calibration/workflow/stop", methods=["POST"])
+def calibration_workflow_stop():
+    if not request_calibration_stop():
+        return api_error("No calibration operation is running.", status_code=409)
+    return api_success("Calibration stop requested.")
+
+
+@app.route("/api/calibration/workflow/reset", methods=["POST"])
+def calibration_workflow_reset():
+    try:
+        reset_calibration_photos()
+        return api_success("Calibration photo dataset reset; saved profiles kept.")
+    except CalibrationFailure as error:
+        return api_error(str(error), status_code=409)
+
 
 @app.route("/viewer/status")
 def viewer_status():
