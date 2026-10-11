@@ -9,8 +9,9 @@ def test_calibration_status_returns_guided_workflow():
     data = response.get_json()
     assert data["success"]
     assert data["data"]["board"] == [9, 6]
-    assert data["data"]["stops_per_revolution"] == 24
+    assert data["data"]["stops_per_revolution"] == 36
     assert "camera" in data["data"]["profiles"]
+    assert data["data"]["visible_sweep_degrees"] == 120.0
 
 
 def test_reject_invalid_capture_parameters_without_touching_motor():
