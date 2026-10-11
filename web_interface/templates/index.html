@@ -1,1845 +1,329 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-    <title>Scanner 3D Control Panel</title>
-
-    <style>
-      :root {
-        --bg-main: #0f172a;
-        --bg-card: #111827;
-        --bg-card-light: #1f2937;
-        --border: #334155;
-        --text-main: #f8fafc;
-        --text-muted: #94a3b8;
-        --blue: #38bdf8;
-        --blue-dark: #2563eb;
-        --green: #16a34a;
-        --green-dark: #15803d;
-        --red: #dc2626;
-        --red-dark: #b91c1c;
-        --yellow: #f59e0b;
-        --purple: #8b5cf6;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        background:
-          radial-gradient(
-            circle at top left,
-            rgba(56, 189, 248, 0.12),
-            transparent 30%
-          ),
-          var(--bg-main);
-        color: var(--text-main);
-        font-family: Arial, sans-serif;
-        margin: 0;
-        min-height: 100vh;
-      }
-
-      header {
-        border-bottom: 1px solid var(--border);
-        background: rgba(15, 23, 42, 0.85);
-        padding: 22px 30px;
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        backdrop-filter: blur(10px);
-      }
-
-      .header-content {
-        align-items: center;
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
-        max-width: 1500px;
-        margin: 0 auto;
-      }
-
-      .title-block h1 {
-        color: var(--blue);
-        font-size: 28px;
-        margin: 0;
-      }
-
-      .title-block p {
-        color: var(--text-muted);
-        margin: 6px 0 0;
-      }
-
-      .environment-badge {
-        background: rgba(139, 92, 246, 0.16);
-        border: 1px solid rgba(139, 92, 246, 0.45);
-        border-radius: 999px;
-        color: #ddd6fe;
-        font-size: 13px;
-        font-weight: bold;
-        padding: 8px 14px;
-        white-space: nowrap;
-      }
-
-      main {
-        max-width: 1500px;
-        margin: 0 auto;
-        padding: 30px;
-      }
-
-      .message {
-        border-radius: 12px;
-        display: none;
-        font-weight: bold;
-        margin-bottom: 22px;
-        padding: 14px 16px;
-      }
-
-      .message.show {
-        display: block;
-      }
-
-      .message.success {
-        background: rgba(22, 163, 74, 0.16);
-        border: 1px solid rgba(22, 163, 74, 0.55);
-        color: #bbf7d0;
-      }
-
-      .message.warning {
-        background: rgba(245, 158, 11, 0.16);
-        border: 1px solid rgba(245, 158, 11, 0.55);
-        color: #fde68a;
-      }
-
-      .message.error {
-        background: rgba(220, 38, 38, 0.16);
-        border: 1px solid rgba(220, 38, 38, 0.55);
-        color: #fecaca;
-      }
-
-      .message.info {
-        background: rgba(56, 189, 248, 0.16);
-        border: 1px solid rgba(56, 189, 248, 0.55);
-        color: #bae6fd;
-      }
-
-      .dashboard-grid {
-        display: grid;
-        gap: 24px;
-        grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr);
-      }
-
-      .side-column {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-      }
-
-      .card {
-        background: rgba(17, 24, 39, 0.96);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: 0 16px 35px rgba(0, 0, 0, 0.22);
-        padding: 22px;
-      }
-
-      .card-header {
-        align-items: flex-start;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 18px;
-      }
-
-      .card h2 {
-        font-size: 20px;
-        margin: 0;
-      }
-
-      .card-description {
-        color: var(--text-muted);
-        font-size: 14px;
-        line-height: 1.5;
-        margin: 6px 0 0;
-      }
-
-      .camera-frame {
-        background: #020617;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        overflow: hidden;
-      }
-
-      .camera-frame img {
-        display: block;
-        width: 100%;
-      }
-
-      .button-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 16px;
-      }
-
-      button {
-        background: var(--blue-dark);
-        border: none;
-        border-radius: 10px;
-        color: white;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: bold;
-        padding: 11px 14px;
-        transition:
-          background 0.2s,
-          transform 0.2s,
-          opacity 0.2s;
-      }
-
-      button:hover {
-        background: #1d4ed8;
-        transform: translateY(-1px);
-      }
-
-      button:disabled {
-        cursor: not-allowed;
-        opacity: 0.55;
-        transform: none;
-      }
-
-      .btn-success {
-        background: var(--green);
-      }
-
-      .btn-success:hover {
-        background: var(--green-dark);
-      }
-
-      .btn-danger {
-        background: var(--red);
-      }
-
-      .btn-danger:hover {
-        background: var(--red-dark);
-      }
-
-      .btn-warning {
-        background: var(--yellow);
-      }
-
-      .btn-warning:hover {
-        background: #d97706;
-      }
-
-      .btn-purple {
-        background: var(--purple);
-      }
-
-      .btn-purple:hover {
-        background: #7c3aed;
-      }
-
-      .disabled-info {
-        background: rgba(15, 23, 42, 0.8);
-        border: 1px dashed var(--border);
-        border-radius: 12px;
-        color: #d1d5db;
-        line-height: 1.6;
-        padding: 14px;
-      }
-
-      .captures-grid {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        margin-top: 16px;
-      }
-
-      .thumbnail {
-        border: 2px solid var(--blue);
-        border-radius: 10px;
-        height: 95px;
-        object-fit: cover;
-        width: 100%;
-      }
-
-      .status-badge {
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: bold;
-        padding: 7px 12px;
-        white-space: nowrap;
-      }
-
-      .status-idle {
-        background: rgba(148, 163, 184, 0.16);
-        color: #cbd5e1;
-      }
-
-      .status-scanning {
-        background: rgba(56, 189, 248, 0.16);
-        color: #bae6fd;
-      }
-
-      .status-completed {
-        background: rgba(22, 163, 74, 0.16);
-        color: #bbf7d0;
-      }
-
-      .status-error {
-        background: rgba(220, 38, 38, 0.16);
-        color: #fecaca;
-      }
-
-      .status-list {
-        display: grid;
-        gap: 10px;
-      }
-
-      .status-row {
-        align-items: center;
-        background: rgba(31, 41, 55, 0.75);
-        border: 1px solid rgba(51, 65, 85, 0.7);
-        border-radius: 12px;
-        display: flex;
-        justify-content: space-between;
-        gap: 14px;
-        padding: 12px;
-      }
-
-      .status-row span:first-child {
-        color: var(--text-muted);
-        font-size: 14px;
-      }
-
-      .status-row span:last-child {
-        font-weight: bold;
-        max-width: 58%;
-        overflow-wrap: anywhere;
-        text-align: right;
-      }
-
-      .settings-grid {
-        display: grid;
-        gap: 12px;
-      }
-
-      label {
-        color: var(--text-muted);
-        display: block;
-        font-size: 14px;
-        margin-bottom: 6px;
-      }
-
-      input {
-        background: #020617;
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        color: var(--text-main);
-        font-size: 15px;
-        padding: 11px;
-        width: 100%;
-      }
-
-      input:focus {
-        border-color: var(--blue);
-        outline: none;
-      }
-
-      table {
-        border-collapse: collapse;
-        margin-top: 12px;
-        width: 100%;
-      }
-
-      th,
-      td {
-        border-bottom: 1px solid var(--border);
-        padding: 12px 10px;
-        text-align: left;
-      }
-
-      th {
-        color: var(--text-muted);
-        font-size: 13px;
-        text-transform: uppercase;
-      }
-
-      td {
-        color: var(--text-main);
-        font-size: 14px;
-      }
-
-      .table-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-      }
-
-      .small-button {
-        font-size: 12px;
-        padding: 8px 10px;
-      }
-
-      .empty-state {
-        background: rgba(15, 23, 42, 0.75);
-        border: 1px dashed var(--border);
-        border-radius: 12px;
-        color: var(--text-muted);
-        line-height: 1.5;
-        margin-top: 12px;
-        padding: 18px;
-        text-align: center;
-      }
-
-      #logsContainer {
-        background: #020617;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        max-height: 270px;
-        overflow: auto;
-        padding: 10px;
-      }
-
-      .log {
-        border-bottom: 1px solid rgba(51, 65, 85, 0.65);
-        color: #d1d5db;
-        font-size: 13px;
-        line-height: 1.45;
-        padding: 6px 4px;
-      }
-
-      .log:last-child {
-        border-bottom: none;
-      }
-
-      .session-row {
-        margin-top: 10px;
-        padding: 12px;
-        background: #111827;
-        border-radius: 8px;
-        border-left: 4px solid #38bdf8;
-      }
-
-      .session-title {
-        font-weight: bold;
-        color: #38bdf8;
-      }
-
-      .session-info {
-        font-size: 14px;
-        color: #d1d5db;
-        margin-top: 4px;
-      }
-      .modules-grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .module-card {
-        background: rgba(15, 23, 42, 0.75);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 14px;
-      }
-
-      .module-title {
-        color: var(--text-main);
-        font-weight: bold;
-        margin-bottom: 6px;
-      }
-
-      .module-description {
-        color: var(--text-muted);
-        font-size: 13px;
-        line-height: 1.45;
-        margin-bottom: 10px;
-      }
-
-      .module-badge {
-        border-radius: 999px;
-        display: inline-block;
-        font-size: 12px;
-        font-weight: bold;
-        padding: 6px 10px;
-      }
-
-      .module-planned {
-        background: rgba(56, 189, 248, 0.16);
-        color: #bae6fd;
-      }
-
-      .module-future {
-        background: rgba(139, 92, 246, 0.16);
-        color: #ddd6fe;
-      }
-
-      .module-disabled {
-        background: rgba(148, 163, 184, 0.16);
-        color: #cbd5e1;
-      }
-
-      @media (max-width: 1050px) {
-        .dashboard-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .header-content {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .environment-badge {
-          white-space: normal;
-        }
-      }
-
-      @media (max-width: 640px) {
-        header,
-        main {
-          padding-left: 16px;
-          padding-right: 16px;
-        }
-
-        .card-header {
-          flex-direction: column;
-        }
-
-        .status-row {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .status-row span:last-child {
-          max-width: 100%;
-          text-align: left;
-        }
-
-        table {
-          display: block;
-          overflow-x: auto;
-          white-space: nowrap;
-        }
-      }
-      @media (max-width: 1050px) {
-        .modules-grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-      }
-
-      @media (max-width: 640px) {
-        .modules-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-    
-      /* Action feedback: press animation, loading spinner and live progress. */
-      button { transition: transform 130ms ease, filter 130ms ease, opacity 130ms ease; }
-      button:not(:disabled):active { transform: scale(0.96); filter: brightness(1.15); }
-      button.action-busy { opacity: 0.75; cursor: progress; }
-      button.action-busy::before {
-        content: ""; display: inline-block; width: 12px; height: 12px;
-        margin-right: 8px; vertical-align: -2px; border-radius: 50%;
-        border: 2px solid currentColor; border-right-color: transparent;
-        animation: action-spin 850ms linear infinite;
-      }
-      @keyframes action-spin { to { transform: rotate(360deg); } }
-      .action-progress { margin-top: 16px; border-radius: 10px; padding: 14px;
-        background: rgba(148,163,184,.09); border: 1px solid var(--border); }
-      .action-progress p { margin: 0 0 9px; font-size: 13px; color: var(--text-muted); }
-      .action-progress progress { width: 100%; height: 12px; accent-color: var(--blue); }
-      .action-progress[hidden] { display: none; }
-      @media (prefers-reduced-motion: reduce) {
-        button, button.action-busy::before { animation: none; transition: none; }
-      }
-    
-      .calib-steps { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 12px; margin: 14px 0; }
-      .calib-step { border: 1px solid var(--border); border-radius: 10px; background: rgba(148,163,184,.07); padding: 12px; }
-      .calib-step strong { display:block; font-size: 14px; margin-bottom: 6px; }
-      .calib-step small { display: block; min-height: 43px; color:var(--text-muted); line-height: 1.35; }
-      .calib-step button { width:100%; margin-top:12px; }
-      .calib-step .stage-status { display:block; font-size:12px; margin-top:9px; color:var(--text-muted); }
-      .calib-section { padding-top:16px; border-top:1px solid var(--border); margin-top:16px; }
-      .calib-section h3 { margin: 0 0 8px; font-size: 16px; }
-      .calib-callout { background: rgba(56,189,248,.07); border:1px solid var(--border); border-radius: 10px; padding:12px; margin: 12px 0; font-size:13px; line-height:1.5; }
-      .calib-input { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0; }
-      .calib-input input { width:100px; }
-      #calibResult { margin:12px 0; font-size:13px; line-height:1.55; white-space:pre-wrap; }
-      .calib-actions { display:flex; gap:9px; flex-wrap:wrap; margin-top:12px; }
-      #calibRunBox { margin-top:14px; }
-</style>
-  </head>
-
-  <body>
-    <header>
-      <div class="header-content">
-        <div class="title-block">
-          <h1>Scanner 3D Control Panel</h1>
-          <p>Raspberry Pi • Flask • OpenCV • Low-cost 3D scanning system</p>
-        </div>
-
-        <div class="environment-badge" id="environmentBadge">
-          Simulation Mode: ON
-        </div>
-      </div>
-    </header>
-
-    <main>
-      <div id="systemMessage" class="message"></div>
-
-      <div class="dashboard-grid">
-        <section class="card">
-          <div class="card-header">
-            <div>
-              <h2>Live Camera</h2>
-              <p class="card-description">
-                Live video stream used for scanner alignment and capture tests.
-              </p>
-            </div>
-          </div>
-
-          <div class="camera-frame">
-            <img src="/video" alt="Live camera stream" />
-          </div>
-
-          <div class="button-row">
-            <button class="btn-success" onclick="captureImage()">
-              Capture Test Image
-            </button>
-
-            <button class="btn-danger" onclick="clearCaptures()">
-              Clear Captures
-            </button>
-
-            <button onclick="resetCamera()">Reset Camera</button>
-
-            <button class="btn-purple" onclick="openDiagnosticWindow('/laser-overlay-video', 'Laser Overlay')">
-              Laser Overlay
-            </button>
-
-            <button class="btn-warning" onclick="openDiagnosticWindow('/laser-mask-video', 'Laser Mask')">
-              Laser Mask
-            </button>
-
-            <button onclick="runLaserDiagnostic()">
-              Laser Diagnostic
-            </button>
-
-            <button class="btn-warning" onclick="calibrateLaserBackground()">
-              Calibrate Background
-            </button>
-          </div>
-
-          <div
-            id="diagnosticFeedback"
-            class="disabled-info"
-            style="display: none; margin-top: 14px"
-          ></div>
-
-          <h3>Captured Images</h3>
-
-          <div id="capturesContainer" class="captures-grid"></div>
-        </section>
-
-        <aside class="side-column">
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Scanner Status</h2>
-                <p class="card-description">
-                  Current runtime information from the scanner backend.
-                </p>
-              </div>
-
-              <span id="scannerBadge" class="status-badge status-idle">
-                IDLE
-              </span>
-            </div>
-
-            <div class="status-list">
-              <div class="status-row">
-                <span>Version</span>
-                <span id="versionStatus">-</span>
-              </div>
-
-              <div class="status-row">
-                <span>Running</span>
-                <span id="runningStatus">NO</span>
-              </div>
-
-              <div class="status-row">
-                <span>Frames Captured</span>
-                <span id="framesCaptured">0</span>
-              </div>
-
-              <div class="status-row">
-                <span>Motor Position</span>
-                <span id="motorPosition">0</span>
-              </div>
-
-              <div class="status-row">
-                <span>Last Capture</span>
-                <span id="lastCapture">None</span>
-              </div>
-
-              <div class="status-row">
-                <span>PLY Generated</span>
-                <span id="plyStatus">NO</span>
-              </div>
-
-              <div class="status-row">
-                <span>Last PLY</span>
-                <span id="lastPointCloud">None</span>
-              </div>
-
-              <div class="status-row">
-                <span>Last Scan</span>
-                <span id="lastScan">None</span>
-              </div>
-
-              <div class="status-row">
-                <span>Simulation Mode</span>
-                <span id="simulationStatus">ON</span>
-              </div>
-            </div>
-          </section>
-
-          <section class="card" id="calibrationCard">
-            <div class="card-header">
-              <div>
-                <h2>Calibrate — 9 × 6 Checkerboard</h2>
-                <p class="card-description">
-                  One upright checkerboard pose, real camera, rotation axis and laser plane.
-                  All three are required for accurate 3D reconstruction.
-                </p>
-              </div>
-            </div>
-            <div class="calib-callout">
-              <strong>Before starting:</strong> secure your rigid, flat checkerboard
-              on the turntable, approximately 2 cm off-centre, but without
-              tilting the platform. Measure a printed square with a ruler.
-              The camera must stay fixed during both calibration and scanning.
-              Never look directly into the laser.
-            </div>
-            <div class="calib-input">
-              <label for="calibSquare">Measured square size (mm)</label>
-              <input id="calibSquare" type="number" step="0.01" min="1" max="100" value="10.00" />
-              <span class="card-description">9 columns × 6 rows of internal corners</span>
-              <button id="calibCheckBoard" class="calib-action" onclick="calibrationCheckBoard()" style="margin-top:10px">Check Board (no movement)</button>
-            </div>
-
-            <div class="calib-section">
-              <h3>1. Camera and turntable axis — laser OFF</h3>
-              <p class="card-description">
-                Use diffuse WHITE lighting, laser OFF, green light OFF.
-                Keep the board upright and rigidly fixed during the single sweep.
-                No tilting or other positions are needed in this experimental workflow.
-              </p>
-              <div class="calib-steps">
-                <div class="calib-step">
-                  <strong>Upright only</strong><small>Keep vertical; no other orientations.</small>
-                  <button class="btn-success calib-action" id="calibCamera1" onclick="calibrationCapture('camera',1)">Capture 24 photos</button>
-                  <span id="stage_camera1" class="stage-status">Not captured</span>
-                </div>
-              </div>
-              <div class="calib-actions">
-                <button class="calib-action" id="calibComputeCamera" onclick="calibrationCompute('camera')">
-                  Compute Camera + Axis
-                </button>
-              </div>
-            </div>
-
-            <div class="calib-section">
-              <h3>2. Laser plane — red laser ON</h3>
-              <p class="card-description">
-                Keep the camera and laser absolutely fixed. Keep enough diffuse WHITE light
-                to see the board corners, RED laser ON, green light OFF.
-                Use the same upright checkerboard position. No tilting.
-              </p>
-              <div class="calib-steps">
-                <div class="calib-step">
-                  <strong>Upright only</strong><small>Red line must cross the visible checkerboard.</small>
-                  <button class="calib-action" id="calibLaser1" onclick="calibrationCapture('laser',1)">Capture laser</button>
-                  <span id="stage_laser1" class="stage-status">Not captured</span>
-                </div>
-              </div>
-              <div class="calib-actions">
-                <button class="calib-action" id="calibComputeLaser" onclick="calibrationCompute('laser')">
-                  Compute Laser Plane
-                </button>
-              </div>
-            </div>
-
-            <div id="calibRunBox" class="action-progress" role="status" aria-live="polite">
-              <p id="calibProgressLabel">Ready for upright calibration (24 photos per full turn).</p>
-              <progress id="calibProgressBar" max="100" value="0"></progress>
-              <div id="calibResult">No calibration profiles computed yet.</div>
-            </div>
-            <div id="calibPreview" hidden style="margin:12px 0">
-              <p class="card-description">Latest recognized checkerboard (green/red corners verify detection):</p>
-              <img id="calibPreviewImage" style="width:100%;max-height:260px;object-fit:contain;border-radius:8px" alt="Last captured checkerboard with detected OpenCV corners" />
-            </div>
-            <div class="calib-actions">
-              <button class="btn-danger" id="calibStop" onclick="calibrationStop()" disabled>Stop Calibration</button>
-              <button onclick="calibrationReset()">Reset calibration photos</button>
-            </div>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Scanner Controls</h2>
-                <p class="card-description">
-                  Start, stop and generate scanner output files.
-                </p>
-              </div>
-            </div>
-
-            <div class="button-row">
-              <button id="startScanButton" class="btn-success" onclick="startScan()">
-                Start Scan
-              </button>
-
-              <button id="stopScanButton" class="btn-danger" onclick="stopScan()">Stop Scan</button>
-
-              <button id="generatePlyButton" onclick="generatePly()">Generate Demo PLY</button>
-
-              <button class="btn-purple" onclick="downloadLastPly()">
-                Download Last PLY
-              </button>
-            </div>
-            <div id="scanProgress" class="action-progress" role="status" aria-live="polite" hidden>
-              <p id="scanProgressLabel">Preparing scan...</p>
-              <progress id="scanProgressBar" max="100" value="0"></progress>
-            </div>
-            <p class="card-description">The current PLY generator is a simulation. A real PLY reconstruction is not implemented yet.</p>
-          </section>
-
-          <section class="card">
-            <div class="card-header">
-              <div>
-                <h2>Config Panel</h2>
-                <p class="card-description">
-                  Safe runtime scanner settings. Camera controls remain
-                  disabled.
-                </p>
-              </div>
-            </div>
-
-            <div class="disabled-info">
-              Camera controls are disabled on notebook. Final camera tuning will
-              be tested on Raspberry Pi using the real scanner webcam.
-            </div>
-
-            <div class="settings-grid" style="margin-top: 16px">
-              <div>
-                <label for="scanStepsInput">Scan Steps</label>
-                <input id="scanStepsInput" type="number" min="1" step="1" />
-              </div>
-
-              <div>
-                <label for="stepDelayInput">Step Delay</label>
-                <input id="stepDelayInput" type="number" min="0" step="0.1" />
-              </div>
-
-              <div>
-                <label for="captureDelayInput">Capture Delay</label>
-                <input
-                  id="captureDelayInput"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                />
-              </div>
-            </div>
-
-            <div class="button-row">
-              <button onclick="saveSettings()">Save Settings</button>
-
-              <button class="btn-warning" onclick="toggleSimulationMode()">
-                Toggle Simulation Mode
-              </button>
-            </div>
-          </section>
-        </aside>
-      </div>
-
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>Generated Point Clouds</h2>
-            <p class="card-description">
-              Generated PLY files available for download or deletion.
-            </p>
-          </div>
-        </div>
-
-        <div id="pointCloudsContainer"></div>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scanner 3D — Validação física</title>
+  <style>
+    :root { color-scheme:dark; --bg:#0b1220; --card:#151f2f; --border:#334155; --text:#e6edf6;
+      --muted:#9aaac0; --blue:#38bdf8; --green:#5ee1ac; --red:#ff8293; --orange:#facc85; }
+    * { box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); font:15px/1.5 system-ui,Arial,sans-serif; margin:0; }
+    header { border-bottom:1px solid var(--border); padding:20px max(20px,calc((100% - 1180px)/2)); }
+    h1 { font-size:23px; line-height:1.2; margin:0 0 5px; }
+    h2 { font-size:18px; margin:0 0 12px; }
+    h3 { font-size:15px; margin:0 0 7px; }
+    p { margin:5px 0 12px; }
+    .muted,small { color:var(--muted); }
+    main { max-width:1180px; margin:auto; padding:20px; }
+    .layout { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; align-items:start; }
+    .stack { display:grid; gap:16px; }
+    .card { border:1px solid var(--border); background:var(--card); padding:18px; border-radius:14px; min-width:0; }
+    .camera { width:100%; aspect-ratio:16/9; display:block; background:#050911; border-radius:9px; object-fit:contain; }
+    .muted.note { font-size:13px; }
+    .actions { display:flex; flex-wrap:wrap; gap:9px; margin:13px 0; }
+    button { border:1px solid #58718b; background:#2a3f5b; color:white; border-radius:9px;
+      font:600 13px/1.3 inherit; padding:10px 13px; cursor:pointer;
+      transition:transform 140ms ease,filter 140ms ease, opacity 140ms ease; }
+    button.primary { background:#075985; border-color:#0ea5e9; }
+    button.success { background:#166348; border-color:#22a66f; }
+    button.stop { background:#732438; border-color:#ef607f; }
+    button:hover:not(:disabled) { filter:brightness(1.12); }
+    button:active:not(:disabled) { transform:scale(.96); }
+    button:disabled { opacity:.48; cursor:not-allowed; }
+    button.busy::before { content:""; display:inline-block; width:11px; height:11px; margin-right:8px;
+      border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
+      animation:spin .8s linear infinite; vertical-align:-2px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .step { margin:12px 0; padding:12px; border:1px solid #394b62; border-radius:10px; }
+    .step p { font-size:13px; color:var(--muted); }
+    .meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:5px 10px; padding:5px 0; }
+    .status { color:var(--orange); font-size:13px; font-weight:700; }
+    .status.ok { color:var(--green); }
+    .status.fail { color:var(--red); }
+    .progress { width:100%; accent-color:var(--blue); height:12px; display:block; margin:10px 0 4px; }
+    #message { padding:12px 16px; border-radius:11px; margin-bottom:16px;
+      border:1px solid #536881; background:#1b2d43; min-height:42px; }
+    #message.error { border-color:#aa475e; color:#ffd9df; }
+    #message.success { border-color:#277b5d; color:#b8ffe1; }
+    #message.info { border-color:#536881; }
+    input { background:#0e1a2d; color:var(--text); border:1px solid #50647f; border-radius:6px;
+      padding:9px; width:90px; }
+    label { font-size:13px; color:var(--muted); }
+    .settings { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .result { white-space:pre-wrap; font:13px/1.5 ui-monospace,Consolas,monospace;
+      overflow-wrap:anywhere; color:#b8d0eb; }
+    #preview { display:none; width:100%; max-height:230px; object-fit:contain; background:#050911; margin-top:10px; border-radius:9px; }
+    details { padding-top:12px; border-top:1px solid var(--border); font-size:13px; }
+    summary { cursor:pointer; color:var(--muted); }
+    a { color:#7dd3fc; }
+    #download { display:none; font-weight:700; }
+    #log { max-height:160px; overflow-y:auto; white-space:pre-wrap; color:#cbd5e1; font-size:12px; }
+    @media(max-width:850px) { .layout { grid-template-columns:1fr; } main { padding:12px; } }
+    @media(prefers-reduced-motion:reduce) { button,button.busy::before { transition:none;animation:none; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Scanner 3D · Validação física</h1>
+  <small>Uma meta: calibrar → capturar objeto → gerar uma nuvem real de pontos.</small>
+</header>
+<main>
+  <div id="message" class="info" role="status" aria-live="polite">Conectando ao scanner...</div>
+  <div class="layout">
+    <div class="stack">
+      <section class="card">
+        <h2>Webcam — ao vivo</h2>
+        <img src="/video" class="camera" alt="Prévia da câmera do scanner">
+        <p class="muted note">Mantenha câmera, base e laser imóveis depois da calibração. Imagens e dados anteriores serão preservados.</p>
+        <button id="check" onclick="checkBoard()">Verificar tabuleiro (54 cantos)</button>
+        <img id="preview" alt="Tabuleiro com os cantos encontrados">
       </section>
-
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>Scan Sessions</h2>
-            <p class="card-description">
-              Scan sessions generated by the scanner pipeline.
-            </p>
-          </div>
+      <section class="card">
+        <h2>Resultado físico</h2>
+        <p id="resultInfo" class="result">Nenhum PLY real gerado nesta execução.</p>
+        <progress id="reconBar" class="progress" max="100" value="0"></progress>
+        <p id="reconProgress" class="muted note">Aguardando escaneamento e calibração.</p>
+        <div class="actions">
+          <button id="reconstruct" class="success" onclick="startReconstruction()">Gerar PLY real</button>
+          <a id="download" href="#">Baixar nuvem de pontos (.ply)</a>
         </div>
-
-        <div id="scanSessionsContainer"></div>
+        <p class="muted note">Abra o arquivo no MeshLab ou CloudCompare. Queremos reconhecer o objeto, mesmo que a superfície ainda tenha ruído.</p>
       </section>
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>Future Modules</h2>
-            <p class="card-description">
-              Planned modules for the next development stages of the Scanner3D
-              system.
-            </p>
+      <section class="card">
+        <details>
+          <summary>Informações técnicas / reaproveitar fotos salvas</summary>
+          <p class="muted">Se você já possui fotos de calibração, tente processá-las sem girar outra vez.</p>
+          <div class="actions">
+            <button id="computeCamera" onclick="computeSaved('camera')">Calcular câmera/eixo com fotos salvas</button>
+            <button id="computeLaser" onclick="computeSaved('laser')">Calcular laser com fotos salvas</button>
           </div>
-        </div>
-
-        <div class="modules-grid">
-          <div class="module-card">
-            <div class="module-title">Camera Calibration</div>
-            <div class="module-description">
-              Future module for camera matrix, distortion correction and
-              calibration files.
-            </div>
-            <span class="module-badge module-planned">Planned</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">Laser Line Detection</div>
-            <div class="module-description">
-              Extraction and filtering of the red laser line from captured
-              frames.
-            </div>
-            <span class="module-badge module-planned">Active Diagnostic</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">Real Point Cloud Reconstruction</div>
-            <div class="module-description">
-              Conversion of laser line data and platform angles into real 3D
-              points.
-            </div>
-            <span class="module-badge module-planned">Planned</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">3D Viewer</div>
-            <div class="module-description">
-              Future browser-based viewer for previewing generated PLY point
-              clouds.
-            </div>
-            <span class="module-badge module-future">Future</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">Mesh Generation</div>
-            <div class="module-description">
-              Future conversion from point cloud data into a connected 3D
-              surface mesh.
-            </div>
-            <span class="module-badge module-future">Future</span>
-          </div>
-
-          <div class="module-card">
-            <div class="module-title">GPIO Motor Control</div>
-            <div class="module-description">
-              Real Raspberry Pi motor control for the scanner turntable.
-            </div>
-            <span class="module-badge module-disabled">Hardware Stage</span>
-          </div>
-        </div>
+          <p id="technical" class="result"></p>
+          <div id="log"></div>
+        </details>
       </section>
-      <section class="card" style="margin-top: 24px">
-        <div class="card-header">
-          <div>
-            <h2>System Logs</h2>
-            <p class="card-description">
-              Latest scanner events and backend messages.
-            </p>
-          </div>
+    </div>
+    <div class="stack">
+      <section class="card">
+        <h2>1. Calibrar · só tabuleiro vertical</h2>
+        <p class="muted note">Tabuleiro 9 × 6 cantos internos. Não inclinar. A face quadriculada deve estar apontada para a câmera antes de começar.</p>
+        <div class="settings">
+          <label for="square">Lado do quadradinho</label>
+          <input id="square" type="number" min="1" max="100" step=".01" value="10.00">
+          <span class="muted">mm</span>
         </div>
-
-        <div id="logsContainer"></div>
-      </section>
-    </main>
-
-    <script>
-      function showMessage(message, type = "info") {
-        const messageBox = document.getElementById("systemMessage");
-
-        messageBox.textContent = message;
-        messageBox.className = "message show " + type;
-      }
-
-      async function requestJson(url, options = {}) {
-        const response = await fetch(url, options);
-
-        let data = {};
-
-        try {
-          data = await response.json();
-        } catch (error) {
-          data = {};
-        }
-
-        if (!response.ok) {
-          const message = data.message || data.error || "Request failed.";
-
-          throw new Error(message);
-        }
-
-        return data;
-      }
-
-
-      async function runLaserDiagnostic() {
-        try {
-          const result = await requestJson("/laser-diagnostic");
-          const data = result.data || {};
-
-          showMessage(
-            "Laser pixels: " +
-              data.laser_pixels +
-              " | Coverage: " +
-              data.laser_coverage_percent +
-              "%",
-            "info",
-          );
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function resetCamera() {
-        try {
-          const result = await requestJson("/reset-camera", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Camera reset requested.", "info");
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function captureImage() {
-        try {
-          const result = await requestJson("/capture", {
-            method: "POST",
-          });
-
-          if (result.success) {
-            const container = document.getElementById("capturesContainer");
-
-            const image = document.createElement("img");
-
-            image.src = "/captures/" + result.file;
-            image.className = "thumbnail";
-            image.alt = "Captured scanner frame";
-
-            container.prepend(image);
-
-            showMessage("Image captured successfully.", "success");
-          }
-
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function clearCaptures() {
-        try {
-          const result = await requestJson("/clear-captures", {
-            method: "POST",
-          });
-
-          document.getElementById("capturesContainer").innerHTML = "";
-
-          showMessage(result.message || "Captures cleared.", "success");
-
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      let scanWasRunning = false;
-      let scanRequestedHere = false;
-      let configuredCaptures = 10;
-
-      function busyButton(id, busy) {
-        const element = document.getElementById(id);
-        if (!element) return;
-        element.classList.toggle("action-busy", busy);
-        element.disabled = busy;
-        element.setAttribute("aria-busy", busy ? "true" : "false");
-      }
-
-      function syncScanProgress(data) {
-        const running = Boolean(data.running);
-        const captured = Number(data.frames_captured || 0);
-        const target = Math.max(1, Number(configuredCaptures) || 10);
-        const wrap = document.getElementById("scanProgress");
-        const label = document.getElementById("scanProgressLabel");
-        const bar = document.getElementById("scanProgressBar");
-        const progress = Math.round(Math.min(100, captured / target * 100));
-
-        if (running) {
-          wrap.hidden = false;
-          label.textContent = "Scanning: " + captured + " / " + target + " photos (" + progress + "%). Please keep the scanner still.";
-          bar.value = progress;
-        } else if (scanWasRunning || scanRequestedHere) {
-          wrap.hidden = false;
-          bar.value = progress;
-          if (data.last_error) {
-            label.textContent = "Scan failed: " + data.last_error;
-            showMessage(label.textContent, "error");
-          } else if (captured >= target && data.point_cloud_generated) {
-            label.textContent = "Capture finished. A demo PLY may have been generated; physical 3D reconstruction still requires calibration.";
-            showMessage(label.textContent, "warning");
-          } else if (captured >= target) {
-            label.textContent = "All photos captured. Physical reconstruction is not yet available.";
-            showMessage(label.textContent, "info");
-          } else {
-            label.textContent = "Stopped after " + captured + " / " + target + " photos.";
-            showMessage(label.textContent, "warning");
-          }
-          scanRequestedHere = false;
-        }
-        scanWasRunning = running;
-        const start = document.getElementById("startScanButton");
-        if (start) start.disabled = running;
-        const stop = document.getElementById("stopScanButton");
-        if (stop) stop.disabled = !running;
-      }
-
-
-      // Calibration UI is driven by the real backend state; a successful
-      // POST only means 'started', never 'calibrated'.
-      let calibrationLastError = null;
-
-      async function calibrationCapture(kind, placement) {
-        const square = Number(document.getElementById("calibSquare").value);
-        if (!Number.isFinite(square) || square < 1 || square > 100) {
-          showMessage("Measure and enter the square size in millimetres.", "error");
-          return;
-        }
-        const illumination = kind === "camera"
-          ? "Confirm: WHITE illumination ON, RED LASER OFF and GREEN illumination OFF."
-          : "Confirm: RED LASER ON, GREEN light OFF, with dim diffuse WHITE illumination so all 54 corners remain visible.";
-        const pose = "upright only";
-        if (!window.confirm(illumination + "\nBoard: " + pose + ". Start 360° rotation?")) return;
-        const id = "calib" + (kind === "camera" ? "Camera" : "Laser") + placement;
-        busyButton(id, true);
-        try {
-          const response = await requestJson("/api/calibration/workflow/capture", {
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({kind,placement,square_size_mm:square})
-          });
-          showMessage("Calibration capture started; the base is rotating.", "info");
-          await updateCalibrationStatus();
-        } catch (error) {
-          showMessage("Calibration could not start: " + error.message, "error");
-        } finally {
-          busyButton(id, false);
-        }
-      }
-
-      async function calibrationCheckBoard() {
-        busyButton("calibCheckBoard", true);
-        showMessage("Checking board in live camera. Motor will not move...", "info");
-        try {
-          const response = await requestJson("/api/calibration/workflow/check-board", {
-            method: "POST"
-          });
-          const data = response.data || {};
-          const feedback = response.message + " Resolution: " +
-            (data.image_size || []).join("x");
-          showMessage(feedback, data.board_detected ? "success" : "warning");
-          document.getElementById("calibProgressLabel").textContent = feedback;
-          if (data.preview_url) {
-            const img = document.getElementById("calibPreviewImage");
-            img.src = data.preview_url + "?t=" + Date.now();
-            document.getElementById("calibPreview").hidden = false;
-          }
-        } catch (error) {
-          showMessage("Board check failed: " + error.message, "error");
-        } finally {
-          busyButton("calibCheckBoard", false);
-        }
-      }
-
-      async function calibrationCompute(kind) {
-        if (!window.confirm("Compute the " + kind + " calibration from captured images?")) return;
-        const id = kind === "camera" ? "calibComputeCamera" : "calibComputeLaser";
-        busyButton(id, true);
-        try {
-          await requestJson("/api/calibration/workflow/compute", {
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({kind})
-          });
-          showMessage("Computing calibration. Wait for the numerical result.", "info");
-          await updateCalibrationStatus();
-        } catch (error) {
-          showMessage("Calibration could not compute: " + error.message, "error");
-        } finally {
-          busyButton(id, false);
-        }
-      }
-
-      async function calibrationStop() {
-        try {
-          await requestJson("/api/calibration/workflow/stop", {method:"POST"});
-          showMessage("Stop requested; motor is being released.", "warning");
-        } catch (error) {
-          showMessage("Cannot stop calibration: " + error.message, "error");
-        }
-      }
-
-      async function calibrationReset() {
-        if (!window.confirm(
-          "Delete only the current calibration photographs? Saved camera/axis/laser profiles will remain."
-        )) return;
-        try {
-          await requestJson("/api/calibration/workflow/reset", {method:"POST"});
-          showMessage("Calibration photographs reset. Saved profiles preserved.", "info");
-          await updateCalibrationStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function updateCalibrationStatus() {
-        try {
-          const result = await requestJson("/api/calibration/workflow");
-          const data = result.data || {};
-          const active = data.run || {};
-          const operation = active.operation || "";
-          const busy = Boolean(active.running);
-          const percent = Number(active.total) > 0
-            ? Math.round(Number(active.done || 0) / active.total * 100) : 0;
-          document.getElementById("calibProgressBar").value = percent;
-          document.getElementById("calibProgressLabel").textContent =
-            (busy ? "In progress: " : "") + (active.message || "Ready") +
-            (busy ? " — " + (active.done || 0) + "/" + (active.total || 0) +
-                      " · board found in " + (active.board_found || 0) + " images" : "");
-          document.getElementById("calibStop").disabled = !busy || operation.startsWith("compute");
-          document.querySelectorAll(".calib-action").forEach(btn => {
-            btn.disabled = busy;
-            const isThis =
-              ["capture_camera", "analyze_camera"].includes(operation) && btn.id === "calibCamera" + active.placement ||
-              ["capture_laser", "analyze_laser"].includes(operation) && btn.id === "calibLaser" + active.placement ||
-              operation === "compute_camera" && btn.id === "calibComputeCamera" ||
-              operation === "compute_laser" && btn.id === "calibComputeLaser";
-            btn.classList.toggle("action-busy", busy && isThis);
-            btn.setAttribute("aria-busy", busy && isThis ? "true" : "false");
-          });
-          const stages = data.stages || {};
-          for (const kind of ["camera","laser"]) {
-            for (const n of [1]) {
-              const key = kind + n;
-              const stage = stages[key] || {};
-              const element = document.getElementById("stage_" + key);
-              if (element) {
-                element.textContent = stage.status
-                  ? stage.status.toUpperCase() + " · " + (stage.board_found || 0) +
-                    "/" + (stage.images || 0) + " recognized"
-                  : "Not captured";
-              }
-            }
-          }
-          const activeKey = operation.startsWith("capture_")
-            ? operation.substring("capture_".length) + active.placement
-            : null;
-          const candidates = [activeKey, "camera1", "laser1"].filter(Boolean);
-          const previewKey = candidates.find(k => stages[k]?.preview_url);
-          const previewBox = document.getElementById("calibPreview");
-          if (previewKey) {
-            previewBox.hidden = false;
-            const preview = document.getElementById("calibPreviewImage");
-            const url = stages[previewKey].preview_url +
-                        "?n=" + (stages[previewKey].images || 0);
-            if (preview.dataset.currentUrl !== url) {
-              preview.src = url;
-              preview.dataset.currentUrl = url;
-            }
-          } else if (data.preflight_preview_url) {
-            previewBox.hidden = false;
-            const preview = document.getElementById("calibPreviewImage");
-            const url = data.preflight_preview_url;
-            if (!preview.dataset.currentUrl || !preview.dataset.currentUrl.startsWith(url)) {
-              preview.src = url + "?t=" + Date.now();
-              preview.dataset.currentUrl = url;
-            }
-          } else {
-            previewBox.hidden = true;
-          }
-          const profiles = data.profiles || {};
-          const cam = profiles.camera?.profile || {};
-          const axis = profiles.turntable?.profile || {};
-          const laser = profiles.laser?.profile || {};
-          const yesno = (value) => value ? "READY" : "NOT CALIBRATED";
-          const resultLines = [
-            "Camera: " + yesno(profiles.camera?.calibrated) +
-              (cam.rms_reprojection_px != null ? " · RMS " + cam.rms_reprojection_px.toFixed(3) + " px" : ""),
-            "Turntable axis: " + yesno(profiles.turntable?.calibrated) +
-              (axis.single_orientation
-                ? " · upright only (limited validation)"
-                : axis.axis_offset_disagreement_mm != null
-                  ? " · spread " + axis.axis_offset_disagreement_mm.toFixed(2) + " mm" : ""),
-            "Laser plane: " + yesno(profiles.laser?.calibrated) +
-              (laser.rms_plane_mm != null ? " · RMS " + laser.rms_plane_mm.toFixed(2) + " mm" : "")
-          ];
-          document.getElementById("calibResult").textContent = resultLines.join("\n");
-          if (active.error && active.error !== calibrationLastError) {
-            calibrationLastError = active.error;
-            showMessage("Calibration rejected: " + active.error, "error");
-          } else if (!active.error) {
-            calibrationLastError = null;
-          }
-        } catch (error) {
-          document.getElementById("calibProgressLabel").textContent =
-            "Calibration status unavailable: " + error.message;
-        }
-      }
-
-      async function startScan() {
-        busyButton("startScanButton", true);
-        showMessage("Starting scanner; waiting for hardware...", "info");
-        try {
-          const result = await requestJson("/start-scan", { method: "POST" });
-          scanRequestedHere = true;
-          showMessage(result.message || "Scan started.", "info");
-          await updateStatus();
-        } catch (error) {
-          scanRequestedHere = false;
-          showMessage("Could not start scan: " + error.message, "error");
-        } finally {
-          busyButton("startScanButton", false);
-          updateLogs();
-          updateStatus();
-        }
-      }
-
-      async function stopScan() {
-        busyButton("stopScanButton", true);
-        showMessage("Sending stop request...", "info");
-        try {
-          const result = await requestJson("/stop-scan", { method: "POST" });
-          showMessage(result.message || "Stop requested.", "warning");
-        } catch (error) {
-          showMessage("Could not stop: " + error.message, "error");
-        } finally {
-          busyButton("stopScanButton", false);
-          updateLogs();
-          updateStatus();
-        }
-      }
-
-      async function generatePly() {
-        const accepted = window.confirm("Current generator creates a DEMO point cloud, not a real scan. Continue?");
-        if (!accepted) return;
-        busyButton("generatePlyButton", true);
-        try {
-          const result = await requestJson("/generate-ply", { method: "POST" });
-          showMessage((result.message || "PLY generated.") + " DEMO ONLY.", "warning");
-          updatePointClouds();
-        } catch (error) {
-          showMessage(error.message, "error");
-        } finally {
-          busyButton("generatePlyButton", false);
-          updateLogs();
-          updateStatus();
-        }
-      }
-
-      function downloadLastPly() {
-        window.location.href = "/download-ply";
-      }
-
-      async function deletePly(filename) {
-        try {
-          const result = await requestJson(
-            "/delete-ply/" + encodeURIComponent(filename),
-            {
-              method: "POST",
-            },
-          );
-
-          showMessage(result.message || "PLY deleted successfully.", "success");
-
-          updateLogs();
-          updateStatus();
-          updatePointClouds();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-
-      async function updateLogs() {
-        try {
-          const response = await fetch("/logs");
-          const result = await response.json();
-
-          const logs = result.logs ?? result.data?.logs ?? [];
-
-          const container = document.getElementById("logsContainer");
-
-          container.innerHTML = "";
-
-          logs.forEach((log) => {
-            const line = document.createElement("div");
-
-            line.className = "log";
-            line.textContent = log;
-
-            container.appendChild(line);
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      function updateStatusBadge(status) {
-        const badge = document.getElementById("scannerBadge");
-
-        const statusText = status || "IDLE";
-
-        badge.textContent = statusText;
-
-        badge.className = "status-badge";
-
-        if (statusText === "SCANNING") {
-          badge.classList.add("status-scanning");
-        } else if (statusText === "COMPLETED") {
-          badge.classList.add("status-completed");
-        } else if (statusText === "ERROR") {
-          badge.classList.add("status-error");
-        } else {
-          badge.classList.add("status-idle");
-        }
-      }
-
-      async function updateStatus() {
-        try {
-          const response = await fetch("/status");
-          if (!response.ok) throw new Error("Status HTTP " + response.status);
-          const payload = await response.json();
-          // The Flask API wraps status under data.status, not at the root.
-          const data = payload.data?.status ?? payload.scanner_status ?? payload;
-
-          document.getElementById("versionStatus").textContent =
-            data.scanner_version ?? data.version ?? "0.1";
-
-          document.getElementById("runningStatus").textContent = data.running
-            ? "YES"
-            : "NO";
-
-          document.getElementById("framesCaptured").textContent =
-            data.frames_captured ?? 0;
-
-          document.getElementById("motorPosition").textContent =
-            data.motor_position ?? 0;
-
-          document.getElementById("lastCapture").textContent =
-            data.last_capture ?? "None";
-
-          document.getElementById("plyStatus").textContent =
-            data.point_cloud_generated ? "YES" : "NO";
-
-          document.getElementById("lastPointCloud").textContent =
-            data.last_point_cloud ?? "None";
-
-          document.getElementById("lastScan").textContent =
-            data.last_scan_time ?? data.last_scan ?? "None";
-
-          const simulationText = data.simulation_mode ? "ON" : "OFF";
-
-          document.getElementById("simulationStatus").textContent =
-            simulationText;
-
-          document.getElementById("environmentBadge").textContent =
-            "Simulation Mode: " + simulationText;
-
-          let badgeStatus = "IDLE";
-
-          if (data.last_error) {
-            badgeStatus = "ERROR";
-          } else if (data.running) {
-            badgeStatus = "SCANNING";
-          } else if (data.point_cloud_generated) {
-            badgeStatus = "COMPLETED";
-          }
-
-          updateStatusBadge(badgeStatus);
-          configuredCaptures = Number(data.scan_steps || configuredCaptures);
-          syncScanProgress(data);
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      async function updatePointClouds() {
-        try {
-          const response = await fetch("/point-clouds");
-          const result = await response.json();
-
-          const files = result.files ?? result.data?.files ?? [];
-
-          const container = document.getElementById("pointCloudsContainer");
-
-          container.innerHTML = "";
-
-          if (!files || files.length === 0) {
-            const empty = document.createElement("div");
-
-            empty.className = "empty-state";
-            empty.textContent = "No point cloud files generated yet.";
-
-            container.appendChild(empty);
-
-            return;
-          }
-
-          const table = document.createElement("table");
-
-          table.innerHTML = `
-      <thead>
-        <tr>
-          <th>File Name</th>
-          <th>Size</th>
-          <th>Modified</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    `;
-
-          const tbody = table.querySelector("tbody");
-
-          files.forEach((file) => {
-            const filename = typeof file === "string" ? file : file.name;
-            const size =
-              typeof file === "string"
-                ? "-"
-                : (file.size_kb ?? file.size ?? "-") + " KB";
-
-            const modified =
-              typeof file === "string" ? "-" : (file.modified_at ?? "-");
-
-            const row = document.createElement("tr");
-
-            row.innerHTML = `
-        <td>${filename}</td>
-        <td>${size}</td>
-        <td>${modified}</td>
-        <td>
-          <div class="table-actions">
-            <button class="small-button" data-action="download">
-              Download
-            </button>
-            <button class="small-button btn-danger" data-action="delete">
-              Delete
-            </button>
+        <div class="step">
+          <div class="meta">
+            <strong>A. Câmera + eixo</strong>
+            <span class="status" id="cameraStatus">Não calibrados</span>
           </div>
-        </td>
-      `;
+          <p>Luz branca ligada, laser vermelho e luz verde desligados. Gira apenas pela faixa útil; fotografa e calcula automaticamente.</p>
+          <button id="camera" class="primary" onclick="captureCalibration('camera')">Calibrar câmera + eixo</button>
+          <p id="cameraStage" class="muted note"></p>
+        </div>
+        <div class="step">
+          <div class="meta">
+            <strong>B. Plano do laser</strong>
+            <span class="status" id="laserStatus">Não calibrado</span>
+          </div>
+          <p>Tabuleiro continua vertical. Ligue o laser vermelho sobre os quadrados; mantenha luz branca suficiente para reconhecer os cantos.</p>
+          <button id="laser" class="primary" onclick="captureCalibration('laser')">Calibrar plano do laser</button>
+          <p id="laserStage" class="muted note"></p>
+        </div>
+        <progress id="calibBar" class="progress" max="100" value="0"></progress>
+        <p id="calibProgress" class="muted note">Aguardando calibração.</p>
+        <button id="stopCalibration" class="stop" onclick="stopCalibration()">Parar calibração</button>
+      </section>
+      <section class="card">
+        <h2>2. Escanear um objeto de verdade</h2>
+        <p>Retire o tabuleiro. Coloque um objeto pequeno, fosco e claro no centro. Laser vermelho ligado, incidindo sobre o objeto.</p>
+        <div class="actions">
+          <button id="startScan" class="success" onclick="startScan()">Iniciar escaneamento 360°</button>
+          <button id="stopScan" class="stop" onclick="stopScan()">Parar scan</button>
+        </div>
+        <progress id="scanBar" class="progress" max="100" value="0"></progress>
+        <p class="muted note" id="scanProgress">Aguardando calibração.</p>
+      </section>
+    </div>
+  </div>
+</main>
+<script>
+  let currentCalibration = null, currentScan = null, currentReconstruction = null;
+  const buttons = ["check","camera","laser","stopCalibration","startScan","stopScan","reconstruct","computeCamera","computeLaser"];
+  const byId = id => document.getElementById(id);
 
-            row
-              .querySelector('[data-action="download"]')
-              .addEventListener("click", () => {
-                window.location.href =
-                  "/download-ply/" + encodeURIComponent(filename);
-              });
-
-            row
-              .querySelector('[data-action="delete"]')
-              .addEventListener("click", () => {
-                deletePly(filename);
-              });
-
-            tbody.appendChild(row);
-          });
-
-          container.appendChild(table);
-        } catch (error) {
-          console.error(error);
-        }
+  function feedback(text, type = "info") {
+    const el = byId("message");
+    if (el.textContent === text && el.className === type) return;
+    el.textContent = text;
+    el.className = type;
+  }
+  function pending(id, value) {
+    const el = byId(id);
+    if (!el) return;
+    el.classList.toggle("busy", value);
+    if (value) el.disabled = true;
+  }
+  async function api(url, body) {
+    const options = body === undefined ? {} : {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+    };
+    const response = await fetch(url, options);
+    let payload;
+    try { payload = await response.json(); }
+    catch { throw new Error("Resposta inválida do servidor (" + response.status + ")."); }
+    if (!response.ok || payload.success === false) {
+      throw new Error(payload.message || ("Erro HTTP " + response.status));
+    }
+    return payload;
+  }
+  async function checkBoard() {
+    pending("check",true);
+    feedback("Verificando os 54 cantos; o motor não vai girar...");
+    try {
+      const payload = await api("/api/calibration/workflow/check-board", {});
+      const d = payload.data || {};
+      feedback(payload.message, d.board_detected ? "success" : "error");
+      if (d.preview_url) {
+        byId("preview").src = d.preview_url + "?t=" + Date.now();
+        byId("preview").style.display = "block";
       }
-
-      async function loadSettings() {
-        try {
-          const response = await fetch("/settings");
-          const result = await response.json();
-
-          const settings = result.settings ?? result.data?.settings ?? result;
-
-          document.getElementById("scanStepsInput").value =
-            settings.scan_steps ?? 10;
-          configuredCaptures = Number(settings.scan_steps ?? 10);
-
-          document.getElementById("stepDelayInput").value =
-            settings.step_delay ?? 1.0;
-
-          document.getElementById("captureDelayInput").value =
-            settings.capture_delay ?? 0.5;
-
-          const simulationText = settings.simulation_mode ? "ON" : "OFF";
-
-          document.getElementById("environmentBadge").textContent =
-            "Simulation Mode: " + simulationText;
-        } catch (error) {
-          showMessage("Could not load settings.", "error");
-        }
+    } catch(e) { feedback(e.message,"error"); }
+    finally { pending("check",false); await refresh(); }
+  }
+  async function captureCalibration(kind) {
+    const square = Number(byId("square").value);
+    if (!Number.isFinite(square) || square < 1 || square > 100) {
+      return feedback("Informe o lado de UM quadradinho em milímetros.","error");
+    }
+    const instructions = kind === "camera"
+      ? "Tabuleiro VERTICAL de frente para a câmera. LUZ BRANCA LIGADA, laser VERMELHO DESLIGADO, verde DESLIGADA."
+      : "Tabuleiro VERTICAL de frente para a câmera. LASER VERMELHO LIGADO sobre o tabuleiro, iluminação suficiente para ler os quadrados.";
+    if (!confirm(instructions + "\nO motor fará movimentos curtos e retornará à posição inicial. Começar?")) return;
+    pending(kind, true);
+    try {
+      await api("/api/calibration/workflow/capture", {kind:kind, placement:1, square_size_mm:square});
+      feedback("Capturando fotos reais. Depois o sistema calculará a calibração automaticamente.","info");
+    } catch(e) { feedback(e.message,"error"); }
+    finally { pending(kind,false); await refresh(); }
+  }
+  async function computeSaved(kind) {
+    const key = kind === "camera" ? "computeCamera" : "computeLaser";
+    pending(key,true);
+    try {
+      await api("/api/calibration/workflow/compute", {kind:kind});
+      feedback("Calculando parâmetros a partir das fotografias existentes...","info");
+    } catch(e) { feedback(e.message,"error"); }
+    finally { pending(key,false); await refresh(); }
+  }
+  async function stopCalibration() {
+    pending("stopCalibration",true);
+    try {
+      await api("/api/calibration/workflow/stop", {});
+      feedback("Parada solicitada. Aguarde o motor ser liberado.","info");
+    } catch(e) { feedback(e.message,"error"); }
+    finally { pending("stopCalibration",false); await refresh(); }
+  }
+  async function startScan() {
+    if (!confirm("Remova o tabuleiro. Objeto claro no centro e LASER VERMELHO ligado. Escanear 360°?")) return;
+    pending("startScan",true);
+    try {
+      await api("/start-scan", {});
+      feedback("Captura física iniciada. Acompanhe a quantidade de fotos.","info");
+    } catch(e) { feedback(e.message,"error"); }
+    finally { pending("startScan",false); await refresh(); }
+  }
+  async function stopScan() {
+    pending("stopScan",true);
+    try { await api("/stop-scan", {}); feedback("Solicitando parada do scan...","info"); }
+    catch(e) { feedback(e.message,"error"); }
+    finally { pending("stopScan",false); await refresh(); }
+  }
+  async function startReconstruction() {
+    pending("reconstruct",true);
+    try {
+      await api("/api/reconstruction/start", {});
+      feedback("Processando fotografias reais e triangulando a linha do laser...","info");
+    } catch(e) { feedback(e.message,"error"); }
+    finally { pending("reconstruct",false); await refresh(); }
+  }
+  async function refresh() {
+    try {
+      const [calRes,scanRes,reconRes] = await Promise.all([
+        api("/api/calibration/workflow"), api("/status"),api("/api/reconstruction/status")
+      ]);
+      const cal = calRes.data || {}, scan = scanRes.data?.status || scanRes.scanner_status || {};
+      const recon = reconRes.data || {};
+      const calBusy = Boolean(cal.run?.running), scanBusy = Boolean(scan.running),
+            reconBusy = Boolean(recon.running), busy = calBusy || scanBusy || reconBusy;
+      const camera = Boolean(cal.profiles?.camera?.calibrated),
+            axis = Boolean(cal.profiles?.turntable?.calibrated),
+            laser = Boolean(cal.profiles?.laser?.calibrated);
+      const allCalibrated = camera && axis && laser;
+      byId("cameraStatus").textContent = camera && axis ? "Câmera + eixo prontos" : "Pendente";
+      byId("cameraStatus").className = "status" + (camera && axis ? " ok" : "");
+      byId("laserStatus").textContent = laser ? "Plano calculado" : "Pendente";
+      byId("laserStatus").className = "status" + (laser ? " ok" : "");
+      for (const kind of ["camera","laser"]) {
+        const stage = cal.stages?.[kind+"1"];
+        const target = byId(kind+"Stage");
+        target.textContent = stage
+          ? ((stage.images || 0) + " fotos | " + (stage.board_found || 0) +
+             " tabuleiros reconhecidos | " + (stage.status || "?"))
+          : "Ainda sem imagens.";
       }
-
-      async function saveSettings() {
-        const payload = {
-          scan_steps: document.getElementById("scanStepsInput").value,
-          step_delay: document.getElementById("stepDelayInput").value,
-          capture_delay: document.getElementById("captureDelayInput").value,
-        };
-
-        try {
-          const result = await requestJson("/settings", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-
-          showMessage(result.message || "Settings updated.", "success");
-
-          loadSettings();
-          updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
+      const cm = cal.run || {};
+      byId("calibBar").value = cm.total ? Math.min(100,Math.round(100*cm.done/cm.total)):0;
+      byId("calibProgress").textContent = cm.message || "Aguardando calibração.";
+      const frames = Number(scan.frames_captured || 0), count = Number(scan.scan_steps || 36);
+      byId("scanBar").value = Math.min(100, count ? Math.round(frames*100/count):0);
+      byId("scanProgress").textContent = scanBusy
+        ? ("Capturando objeto: "+frames+"/"+count+" fotos")
+        : ("Scan parado · fotos nesta sessão: "+frames+"/"+count);
+      byId("reconBar").value = recon.total ? Math.round(100*(recon.done || 0)/recon.total):0;
+      byId("reconProgress").textContent = recon.message || "Aguardando.";
+      if (recon.result?.file) {
+        byId("resultInfo").textContent =
+          "Arquivo: "+recon.result.file+"\nPontos 3D reais: "+recon.result.points+
+          "\nFotos aproveitadas: "+recon.result.usable_frames+"/"+recon.result.total_frames+
+          "\nDimensões aproximadas (mm): "+recon.result.bounding_box_mm.join(" × ")+
+          (recon.result.limited_calibration ? "\nCalibração experimental; medidas requerem validação." : "");
+        byId("download").href="/download-ply/"+encodeURIComponent(recon.result.file);
+        byId("download").style.display="inline";
       }
-
-      async function toggleSimulationMode() {
-        try {
-          const result = await requestJson("/simulation-mode", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Simulation mode updated.", "info");
-
-          loadSettings();
-          updateStatus();
-          updateLogs();
-        } catch (error) {
-          showMessage(error.message, "error");
-        }
-      }
-      async function updateScanSessions() {
-        try {
-          const response = await fetch("/scan-sessions");
-          const result = await response.json();
-
-          const sessions = result.sessions ?? result.data?.sessions ?? [];
-
-          const container = document.getElementById("scanSessionsContainer");
-
-          container.innerHTML = "";
-
-          if (!sessions || sessions.length === 0) {
-            const empty = document.createElement("div");
-
-            empty.className = "empty-state";
-            empty.textContent = "No scan sessions created yet.";
-
-            container.appendChild(empty);
-
-            return;
-          }
-
-          sessions.forEach((session) => {
-            const div = document.createElement("div");
-            div.className = "session-row";
-
-            const title = document.createElement("div");
-            title.className = "session-title";
-            title.textContent = session.session_id;
-
-            const status = document.createElement("div");
-            status.className = "session-info";
-            status.textContent = "Status: " + session.status;
-
-            const created = document.createElement("div");
-            created.className = "session-info";
-            created.textContent = "Created at: " + session.created_at;
-
-            const finished = document.createElement("div");
-            finished.className = "session-info";
-            finished.textContent =
-              "Finished at: " + (session.finished_at ?? "Not finished");
-
-            const captures = document.createElement("div");
-            captures.className = "session-info";
-            captures.textContent =
-              "Captures: " + (session.captures?.length ?? 0);
-
-            const pointClouds = document.createElement("div");
-            pointClouds.className = "session-info";
-            pointClouds.textContent =
-              "Point Clouds: " + (session.point_clouds?.length ?? 0);
-
-            div.appendChild(title);
-            div.appendChild(status);
-            div.appendChild(created);
-            div.appendChild(finished);
-            div.appendChild(captures);
-            div.appendChild(pointClouds);
-
-            container.appendChild(div);
-          });
-        } catch (error) {
-          console.error(error);
-        }
-      }
-
-      setInterval(() => {
-        updateLogs();
-        updateStatus();
-        updatePointClouds();
-        updateScanSessions();
-        updateCalibrationStatus();
-      }, 1000);
-
-      loadSettings();
-      updateCalibrationStatus();
-      updateLogs();
-      updateStatus();
-      updatePointClouds();
-      updateScanSessions();
-
-      // UX_FEEDBACK_SAFE_OVERRIDES
-      window.showDiagnosticFeedback = function (message, type = "info") {
-        const feedbackBox =
-          document.getElementById("diagnosticFeedback") ||
-          document.getElementById("laserDiagnosticResult");
-
-        if (feedbackBox) {
-          feedbackBox.style.display = "block";
-          feedbackBox.textContent = message;
-        }
-
-        if (typeof showMessage === "function") {
-          showMessage(message, type);
-        }
-      };
-
-      window.setActionButtonsDisabled = function (disabled) {
-        document.querySelectorAll("button").forEach((button) => {
-          button.disabled = disabled;
-        });
-      };
-
-      window.openDiagnosticWindow = function (url, label) {
-        showDiagnosticFeedback("Opening " + label + "...", "info");
-
-        const popup = window.open(url, "_blank");
-
-        if (!popup) {
-          showDiagnosticFeedback(
-            label + " was blocked by the browser. Open directly: " + url,
-            "warning",
-          );
-
-          return;
-        }
-
-        popup.focus();
-
-        showDiagnosticFeedback(label + " opened in a new tab.", "success");
-      };
-
-      window.runLaserDiagnostic = async function () {
-        try {
-          showDiagnosticFeedback("Running laser diagnostic...", "info");
-
-          const result = await requestJson("/laser-diagnostic");
-          const data = result.data || {};
-
-          let message =
-            "Laser pixels: " +
-            data.laser_pixels +
-            " | Coverage: " +
-            data.laser_coverage_percent +
-            "% | Resolution: " +
-            data.width +
-            "x" +
-            data.height;
-
-          if (data.background_calibrated !== undefined) {
-            message +=
-              " | Background calibrated: " +
-              (data.background_calibrated ? "YES" : "NO");
-          }
-
-          showDiagnosticFeedback(message, "info");
-        } catch (error) {
-          showDiagnosticFeedback(
-            "Laser diagnostic failed: " + error.message,
-            "error",
-          );
-        }
-      };
-
-      window.calibrateLaserBackground = async function () {
-        const confirmed = confirm(
-          "Remove the object from the platform, keep the laser and lighting unchanged, then continue."
-        );
-
-        if (!confirmed) {
-          showDiagnosticFeedback("Background calibration cancelled.", "warning");
-          return;
-        }
-
-        try {
-          setActionButtonsDisabled(true);
-          showDiagnosticFeedback("Calibrating laser background...", "info");
-
-          const result = await requestJson("/calibrate-laser-background", {
-            method: "POST",
-          });
-
-          const data = result.data || {};
-
-          const message =
-            "Background calibrated. Pixels: " +
-            data.laser_pixels +
-            " | Coverage: " +
-            data.laser_coverage_percent +
-            "%";
-
-          showDiagnosticFeedback(message, "success");
-        } catch (error) {
-          showDiagnosticFeedback(
-            "Background calibration failed: " + error.message,
-            "error",
-          );
-        } finally {
-          setActionButtonsDisabled(false);
-        }
-      };
-
-
-    </script>
-  </body>
+      if (cm.error && cm.error !== currentCalibration) { feedback("Calibração: "+cm.error,"error"); }
+      if (scan.last_error && scan.last_error !== currentScan) { feedback("Scanner: "+scan.last_error,"error"); }
+      if (recon.error && recon.error !== currentReconstruction) { feedback("Reconstrução: "+recon.error,"error"); }
+      currentCalibration=cm.error || null; currentScan=scan.last_error || null;
+      currentReconstruction=recon.error || null;
+      byId("check").disabled=busy;
+      byId("camera").disabled=busy;
+      byId("laser").disabled=busy || !(camera && axis);
+      byId("stopCalibration").disabled=!calBusy || String(cm.operation).startsWith("compute");
+      byId("startScan").disabled=busy || !allCalibrated;
+      byId("stopScan").disabled=!scanBusy;
+      byId("reconstruct").disabled=busy || !allCalibrated;
+      byId("computeCamera").disabled=busy;
+      byId("computeLaser").disabled=busy;
+      const stats = ["Câmera: "+(camera?"calibrada":"pendente"),"Eixo: "+(axis?"calculado":"pendente"),
+        "Laser: "+(laser?"calibrado":"pendente"),"Capturas: "+frames,
+        "Reconstrução: "+(reconBusy?"em andamento":"parada")];
+      byId("technical").textContent=stats.join("\n");
+    } catch(e) {
+      byId("calibProgress").textContent="Sem conexão com o backend: "+e.message;
+    }
+  }
+  async function logs() {
+    try {
+      const r=await api("/logs");
+      const lines=r.logs || r.data?.logs || [];
+      byId("log").textContent=lines.slice(-20).join("\n");
+    } catch(e) { /* Keep primary UI available even without log endpoint. */ }
+  }
+  refresh().then(()=>feedback("Interface pronta. Vamos conseguir nosso primeiro PLY real.","info"));
+  logs();
+  setInterval(refresh,1500);
+  setInterval(logs,5000);
+</script>
+</body>
 </html>
