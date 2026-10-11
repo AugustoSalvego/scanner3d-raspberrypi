@@ -382,6 +382,41 @@ class TestCalibrationEndpoints:
         assert calibration["ready_for_physical_scan"] is False
 
 
+class TestSessionsFromEarlierVersions:
+    def test_server_starts_and_serves_them(self, isolated_outputs):
+        """A session from the earlier software used to stop the server starting."""
+
+        from test_session_and_scan import _write_legacy_session
+
+        from scanner_core.config import config_store
+        from scanner_core.state import state_store
+        from web_interface.app import create_app
+
+        _write_legacy_session(paths.SCANS_DIR, "scan_20260520_140311", status="running")
+
+        config_store.replace(config_store.get().__class__().validate())
+        state_store.reset()
+
+        app = create_app()
+
+        with app.test_client() as client:
+            (session,) = data(client.get("/api/scan/sessions"))["sessions"]
+
+            assert session["session_id"] == "scan_20260520_140311"
+            assert session["legacy"] is True
+
+            detail = data(client.get("/api/scan/sessions/scan_20260520_140311"))["session"]
+
+            assert detail["captures"][0]["filename"] == "capture_001.jpg"
+            assert detail["captures"][0]["url"] == "/captures/scan_20260520_140311/capture_001.jpg"
+            assert detail["point_clouds"][0]["filename"] == "cloud_001.ply"
+
+            response = client.post("/api/scan/sessions/scan_20260520_140311/reconstruct")
+
+            # Old sessions have no capture angles: a clear refusal, not a 500.
+            assert response.status_code == 422
+
+
 class TestAutomaticCalibrationEndpoints:
     def test_status_lists_the_three_steps(self, client):
         body = data(client.get("/api/calibration/auto"))

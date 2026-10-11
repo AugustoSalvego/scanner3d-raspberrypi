@@ -105,6 +105,45 @@ def generate_session_id() -> str:
     return f"scan_{stamp}_{secrets.token_hex(SESSION_ID_RANDOM_BYTES)}"
 
 
+def _entries(metadata: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Capture or point-cloud records, whatever version wrote the session.
+
+    The earlier software stored bare file names (``"captures": ["a.jpg"]``);
+    this version stores one object per file.  Both are returned as objects so
+    nothing downstream has to care, and anything else is ignored rather than
+    allowed to crash the caller.
+    """
+
+    raw = metadata.get(key)
+
+    if not isinstance(raw, list):
+        return []
+
+    entries: list[dict[str, Any]] = []
+
+    for item in raw:
+        if isinstance(item, dict):
+            entries.append(item)
+        elif isinstance(item, str):
+            entries.append({"filename": item, "legacy": True})
+
+    return entries
+
+
+def capture_entries(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    return _entries(metadata, "captures")
+
+
+def point_cloud_entries(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    return _entries(metadata, "point_clouds")
+
+
+def is_legacy(metadata: dict[str, Any]) -> bool:
+    """``True`` for a session written by the software before schema 2."""
+
+    return "schema_version" not in metadata
+
+
 class ScanSession:
     """A single scan folder and its metadata."""
 
@@ -236,23 +275,23 @@ class ScanSession:
 
         metadata = self.metadata()
 
-        point_clouds = metadata.get("point_clouds") or []
+        point_clouds = point_cloud_entries(metadata)
+        errors = metadata.get("errors")
 
         return {
-            "session_id": self.session_id,
+            "session_id": str(metadata.get("session_id") or self.path.name),
             "schema_version": metadata.get("schema_version"),
+            "legacy": is_legacy(metadata),
             "status": metadata.get("status"),
             "mode": metadata.get("mode"),
             "created_at": metadata.get("created_at"),
             "started_at": metadata.get("started_at"),
             "finished_at": metadata.get("finished_at"),
-            "capture_count": len(metadata.get("captures") or []),
+            "capture_count": len(capture_entries(metadata)),
             "point_cloud_count": len(point_clouds),
-            "last_point_cloud": point_clouds[-1]["filename"] if point_clouds else None,
-            "point_count": (
-                point_clouds[-1].get("point_count") if point_clouds else None
-            ),
-            "error_count": len(metadata.get("errors") or []),
+            "last_point_cloud": point_clouds[-1].get("filename") if point_clouds else None,
+            "point_count": point_clouds[-1].get("point_count") if point_clouds else None,
+            "error_count": len(errors) if isinstance(errors, list) else 0,
         }
 
 
@@ -360,11 +399,16 @@ class SessionManager:
 
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                logger.warning(f"Skipping session with unreadable metadata: {entry.name}")
-                continue
 
-            summaries.append(ScanSession(path=entry, metadata=metadata).summary())
+                if not isinstance(metadata, dict):
+                    raise ValueError("metadata is not an object")
+
+                summaries.append(ScanSession(path=entry, metadata=metadata).summary())
+            except Exception as error:  # noqa: BLE001 - one bad folder must not hide the rest
+                # This runs at start-up: a single damaged or unexpected session
+                # used to stop the whole server from starting.
+                logger.warning(f"Skipping session with unreadable metadata: {entry.name} ({error})")
+                continue
 
         summaries.sort(key=lambda item: item.get("created_at") or "", reverse=True)
 
@@ -402,13 +446,16 @@ class SessionManager:
 
             try:
                 session = self.load(str(summary["session_id"]))
-            except SessionError:
-                continue
 
-            session.finish(
-                SessionStatus.ERROR,
-                error="Session was still marked as running when the scanner restarted.",
-            )
+                session.finish(
+                    SessionStatus.ERROR,
+                    error="Session was still marked as running when the scanner restarted.",
+                )
+            except Exception as error:  # noqa: BLE001 - never block start-up
+                logger.warning(
+                    f"Could not mark session {summary.get('session_id')} as interrupted: {error}"
+                )
+                continue
 
             recovered += 1
 

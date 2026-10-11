@@ -6,7 +6,7 @@ from flask import Blueprint
 
 from scanner_core.errors import SessionError
 from scanner_core.pipeline import scan_controller
-from scanner_core.session import session_manager
+from scanner_core.session import capture_entries, point_cloud_entries, session_manager
 from web_interface.api_response import api_error, api_success, error_from_exception
 
 blueprint = Blueprint("scan", __name__)
@@ -49,17 +49,17 @@ def get_session(session_id: str):
     captures = [
         {
             **capture,
-            "url": f"/captures/{session_id}/{capture['filename']}",
+            "url": f"/captures/{session_id}/{capture.get('filename')}",
         }
-        for capture in metadata.get("captures", [])
+        for capture in capture_entries(metadata)
     ]
 
     point_clouds = [
         {
             **cloud,
-            "download_url": f"/download/point-cloud/{session_id}/{cloud['filename']}",
+            "download_url": f"/download/point-cloud/{session_id}/{cloud.get('filename')}",
         }
-        for cloud in metadata.get("point_clouds", [])
+        for cloud in point_cloud_entries(metadata)
     ]
 
     return api_success(

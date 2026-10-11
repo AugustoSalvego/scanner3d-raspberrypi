@@ -731,7 +731,11 @@
 
       const caption = document.createElement("figcaption");
 
-      caption.textContent = Number(capture.angle_deg).toFixed(1) + " deg";
+      // Sessions from the earlier software recorded no angle.
+      caption.textContent =
+        capture.angle_deg === null || capture.angle_deg === undefined
+          ? "no angle (old session)"
+          : Number(capture.angle_deg).toFixed(1) + " deg";
 
       figure.appendChild(image);
       figure.appendChild(caption);

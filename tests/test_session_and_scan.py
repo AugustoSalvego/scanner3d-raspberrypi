@@ -630,3 +630,78 @@ class TestHardwareFollowsTheCurrentConfiguration:
         controller.preview_frame()
 
         assert controller._hardware is not in_use
+
+
+def _write_legacy_session(root, session_id, *, status="finished", captures=("capture_001.jpg",), clouds=("cloud_001.ply",)):
+    """A session exactly as the earlier main-branch software wrote it."""
+
+    import json
+
+    folder = root / session_id
+    (folder / "captures").mkdir(parents=True)
+    (folder / "point_clouds").mkdir(parents=True)
+
+    metadata = {
+        "session_id": session_id,
+        "created_at": "2026-05-20 14:03:11",
+        "finished_at": None if status == "running" else "2026-05-20 14:05:40",
+        "captures": list(captures),
+        "point_clouds": list(clouds),
+        "status": status,
+    }
+    (folder / "metadata.json").write_text(json.dumps(metadata, indent=4), encoding="utf-8")
+
+    return folder
+
+
+class TestSessionsFromEarlierVersions:
+    """Sessions recorded by the earlier software stored bare file names.
+
+    One of them on the Raspberry Pi stopped the server from starting at all:
+    ``TypeError: string indices must be integers`` in ``summary()``.
+    """
+
+    def test_legacy_sessions_are_listed(self, session_manager):
+        _write_legacy_session(session_manager.root, "scan_20260520_140311")
+
+        (summary,) = session_manager.list_sessions()
+
+        assert summary["session_id"] == "scan_20260520_140311"
+        assert summary["capture_count"] == 1
+        assert summary["point_cloud_count"] == 1
+        assert summary["last_point_cloud"] == "cloud_001.ply"
+        assert summary["point_count"] is None
+        assert summary["legacy"] is True
+
+    def test_new_sessions_are_not_flagged_legacy(self, session_manager):
+        session_manager.create(mode="simulation")
+
+        (summary,) = session_manager.list_sessions()
+
+        assert summary["legacy"] is False
+
+    def test_a_legacy_running_session_is_recovered_without_crashing(self, session_manager):
+        _write_legacy_session(session_manager.root, "scan_20260520_140311", status="running")
+
+        assert session_manager.recover_interrupted_sessions() == 1
+
+        (summary,) = session_manager.list_sessions()
+
+        assert summary["status"] == "error"
+
+    def test_a_malformed_session_is_skipped_not_fatal(self, session_manager):
+        _write_legacy_session(session_manager.root, "scan_ok")
+        _write_legacy_session(session_manager.root, "scan_broken", captures=(), clouds=())
+
+        import json
+
+        broken = session_manager.root / "scan_broken" / "metadata.json"
+        metadata = json.loads(broken.read_text(encoding="utf-8"))
+        metadata["point_clouds"] = 5
+        metadata["captures"] = {"weird": True}
+        broken.write_text(json.dumps(metadata), encoding="utf-8")
+
+        ids = {summary["session_id"] for summary in session_manager.list_sessions()}
+
+        assert "scan_ok" in ids
+        assert session_manager.recover_interrupted_sessions() == 0
