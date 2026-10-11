@@ -32,7 +32,9 @@ RUN_FILE = RUN_DIR / "run.json"
 CAMERA_FILE = OUTPUT / "camera_calibration.json"
 AXIS_FILE = OUTPUT / "turntable_calibration.json"
 LASER_FILE = OUTPUT / "laser_calibration.json"
-STOPS = 24
+STOPS = 36
+# The board faces the camera initially, then turns just 120 degrees.
+VISIBLE_SWEEP_DEGREES = 120.0
 SETTLE_SECONDS = 0.18
 PHOTOS_AT_LEAST = 8
 
@@ -102,6 +104,7 @@ def calibration_status():
         "square_size_mm": run.get("square_size_mm"),
         "board": [BOARD_COLUMNS, BOARD_ROWS],
         "stops_per_revolution": STOPS,
+        "visible_sweep_degrees": VISIBLE_SWEEP_DEGREES,
         "stages": completed,
         "preflight_preview_url": (
             "/api/calibration/workflow/preflight-preview"
@@ -188,7 +191,7 @@ def _capture_worker(kind, placement, square):
             for i in range(STOPS):
                 if _stop.is_set():
                     raise MotorInterrupted("Calibration stopped by user.")
-                target = round(i * MOTOR_HALF_STEPS_PER_REV / STOPS)
+                target = round(i * MOTOR_HALF_STEPS_PER_REV * VISIBLE_SWEEP_DEGREES / 360.0 / (STOPS - 1))
                 motor.move(target - motor.position, cancelled=_stop.is_set)
                 deadline = time.monotonic() + SETTLE_SECONDS
                 while time.monotonic() < deadline:
@@ -212,8 +215,12 @@ def _capture_worker(kind, placement, square):
                 })
                 _save_json(RUN_FILE, run)
                 _set_state(done=i + 1, message=f"Rotating and photographing: {i+1}/{STOPS} ({key}).")
+            # Restore approximate start orientation so the next manual
+            # illumination stage can begin without repositioning the board.
+            # Reverse motion on this gearbox may exhibit backlash.
             if not _stop.is_set():
-                motor.move(MOTOR_HALF_STEPS_PER_REV - motor.position, cancelled=_stop.is_set)
+                _set_state(message="Returning checkerboard to its starting position...")
+                motor.move(-motor.position, cancelled=_stop.is_set)
 
         _set_state(
             operation=f"analyze_{kind}", done=0, total=STOPS,
@@ -241,8 +248,15 @@ def _capture_worker(kind, placement, square):
                 message=f"Analyzing saved photos: {i+1}/{STOPS}; board in {recognized}.",
             )
         record["status"] = "complete"
-        _set_state(message=f"{key}: complete. Board detected in "
-                   f"{sum(bool(f['corners']) for f in record['frames'])}/{STOPS} photos.")
+        _save_json(RUN_FILE, run)
+        found_count = sum(bool(f["corners"]) for f in record["frames"])
+        _set_state(
+            operation=f"compute_{kind}", done=0, total=1,
+            message=f"{key}: {found_count}/{STOPS} photos recognized. Calculating geometry..."
+        )
+        # One click captures AND computes this calibration stage. No manual
+        # compute action is required unless reusing an old dataset.
+        _compute_worker(kind, release_gate=False)
     except MotorInterrupted as error:
         record["status"] = "stopped"
         record["error"] = str(error)
@@ -286,7 +300,7 @@ def start_compute(kind):
         raise
 
 
-def _compute_worker(kind):
+def _compute_worker(kind, release_gate=True):
     try:
         run = _load_json(RUN_FILE, {}) or {}
         square = float(run.get("square_size_mm", 0))
@@ -378,8 +392,9 @@ def _compute_worker(kind):
         _set_state(error=str(error), message=f"Calibration rejected: {error}")
         add_log(f"Calibration rejected: {error}")
     finally:
-        _set_state(running=False)
-        hardware_gate.release()
+        if release_gate:
+            _set_state(running=False)
+            hardware_gate.release()
 
 
 def reset_photos():
