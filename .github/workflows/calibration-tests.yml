@@ -27,9 +27,9 @@ jobs:
           from pathlib import Path
           import re
           html = Path("web_interface/templates/index.html").read_text()
-          scripts = re.findall(r"<script[^>]*>([\\s\\S]*?)</script>", html)
+          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, re.S)
           assert scripts, "No dashboard script found"
-          Path("/tmp/scanner-dashboard.js").write_text("\\n".join(scripts))
+          Path("/tmp/scanner-dashboard.js").write_text(scripts[0])
           PY
           node --check /tmp/scanner-dashboard.js
       - name: Test calibration geometry and Flask API
