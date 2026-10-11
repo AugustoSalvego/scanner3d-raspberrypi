@@ -17,7 +17,7 @@ Esta branch deriva exclusivamente de `hardware-integration` (commit `6470d49`). 
 - O pipeline em modo físico move, estabiliza, captura, registra `half_steps` e `angle_deg` em `outputs/scans/<sessão>/metadata.json`.
 - A contagem de 4096 half-steps/volta é **hipótese**: medir na plataforma montada antes de reconstrução métrica. Sem encoder, posições são comandadas e não confirmadas por sensor.
 - O site tem animação e feedback durante a aquisição.
-- **Ainda não validado no Raspberry Pi real**. Calibração geométrica e reconstrução real ainda não foram implementadas nesta branch.
+- **No Raspberry Pi real:** câmera já reconheceu 54 cantos em 1280×720 e a base já girou. O cálculo da calibração completa e o PLY real ainda aguardam validação física.
 - O gerador de PLY herdado é **simulado** e está identificado como DEMO; o fluxo físico não o chama.
 - Não movimentar a base com tabuleiro desequilibrado; garantir apoio mecânico, folga dos fios e ausência de colisões.
 
@@ -27,8 +27,8 @@ Esta branch deriva exclusivamente de `hardware-integration` (commit `6470d49`). 
 
 1. Abrir o painel Flask simplificado `/`. Não apagar nem limpar dados existentes.
 2. Tabuleiro rígido vertical, quadrados de 10 mm, aproximadamente 2 cm fora do eixo, sem inclinação da plataforma. Laser OFF, luz branca ON. Verificar 54 cantos. Primeiro tentar **Calcular câmera/eixo com fotos salvas** (menu Informações técnicas), pois capturas anteriores podem bastar.
-3. Se as capturas existentes falharem por poucos cantos ou pouca variedade angular: tabuleiro de frente para a câmera, botão **Calibrar câmera + eixo**. A placa executa **36 fotos ao longo de 120° úteis**. A cada movimento espera 0,18 s, fotografa; depois retorna à orientação aproximada inicial, detecta os cantos e calcula automaticamente os parâmetros.
-4. Laser ON com luz suficiente para reconhecer os cantos, tabuleiro ainda vertical, botão **Calibrar plano do laser**, também com 36 fotos na faixa útil e cálculo automático.
+3. Se as fotos existentes não bastarem: tabuleiro vertical e inicialmente voltado para a câmera, botão **Calibrar câmera + eixo**. O motor procura a **direita** (testa a presença dos 54 cantos a cada 5°), interrompe ao ter **três falhas seguidas**, volta ao **centro** e então fotografa em incrementos de **3° à esquerda**, até o padrão desaparecer três vezes seguidas ou alcançar 36 fotos úteis. Velocidade do motor na calibração: **5 ms por half-step**. Espera de estabilização: **0,40 s**, mais o tempo de duas leituras de webcam. O cálculo começa automaticamente ao terminar. Se o primeiro giro for para esquerda em vez de direita, use **Inverter giro direita/esquerda** na interface.
+4. Laser ON com luz suficiente para reconhecer os cantos, tabuleiro ainda vertical, botão **Calibrar plano do laser**. O mesmo trajeto direita → centro → fotografias à esquerda é repetido, e o plano é calculado automaticamente.
 5. Remover tabuleiro; colocar cilindro fosco e claro no centro da plataforma; laser vermelho visível; iniciar escaneamento físico 360°. O sistema guarda fotos e posições comandadas de motor. Confirmar que a plataforma realmente completa uma volta.
 6. **Gerar PLY real** no painel. O processamento detecta a linha vermelha, intersecta os raios da câmera com o plano calibrado, desfaz a rotação do motor, filtra pontos fora da região central e exporta coordenadas mm.
 7. Abrir o PLY no MeshLab. Fotografar a tela, contar os pontos e comparar a forma com o objeto real. Anotar medidas de referência, número de fotos aceitas, cobertura e erros: material direto para resultados do TCC.
@@ -39,19 +39,19 @@ Um `real_scan_*.ply` ou `real_*.ply` criado de fotografias físicas deve conter 
 
 ### Limitações importantes
 
-- A amostragem angular do tabuleiro usa 36 posições em 120°; sem sensor de posição, os ângulos são comandados e assumem inicialmente 4096 half-steps por volta. Medir uma volta completa da plataforma é indispensável para validar a escala angular.
-- A base deve parar completamente antes da foto. A pausa inicial de 0,18 s é hipótese e deve ser aumentada se houver borrões; o processamento dos cantos ocorre depois da movimentação.
+- O giro da calibração **não é uma volta completa**: cada lado é limitado a 110° por segurança, com parada antecipada após três perdas consecutivas do tabuleiro. A captura usa **no máximo 36 fotos válidas** no lado esquerdo; isso não garante que todas sejam úteis geometricamente. Sem encoder, os ângulos são comandados e supõem inicialmente 4096 half-steps por volta. Medir uma volta real da plataforma é necessário para validar a escala angular.
+- A base deve parar completamente antes da foto. A pausa inicial de 0,40 s é um ajuste experimental; se ocorrer borrão, aumente `SETTLE_SECONDS`. A detecção de cantos ocorre em cada parada para permitir identificar quando o tabuleiro desaparece.
 - O raio útil de reconstrução inicialmente é de 90 mm e a nuvem não tem preenchimento automático de superfícies invisíveis.
 - Todo PLY real é gravado em `outputs/point_clouds/real_<sessão>.ply`. O gerador simulado antigo não participa do novo painel.
 - Testes automatizados de geometria e de integração com fotos sintéticas **não são** validação física. O resultado real depende de testes no Raspberry Pi.
-- Não usar `git pull` com o motor em movimento. Preserve `outputs/`, incluindo calibrações anteriores e todas as fotos.
+- Não usar `git pull` com o motor em movimento. Preserve `outputs/`, incluindo calibrações anteriores e todas as fotos. Ao repetir uma etapa, a pasta anterior é movida para `outputs/calibration/chatgpt_version/history/` com seus metadados, em vez de ser apagada.
 
 ## Plano em ordem obrigatória
 
 - [ ] Testar servidor Flask e pré-visualização da câmera.
 - [ ] Testar motor fisicamente e medir passos por volta sem carga instável.
 - [ ] Testar scan de 12–36 fotos e conferir `capture_positions` no metadata.
-- [x] Implementar botão Calibrate com 24 fotos, orientação vertical única, sobreposição de cantos e cálculo experimental. Pendente validação física da reconstrução.
+- [x] Implementar calibração vertical única com busca do limite à direita, retorno ao centro, fotos à esquerda e cálculo experimental. **Pendente validação física.**
 - [ ] Obter valores reais de câmera, eixo e plano do laser no Raspberry e validar contra objeto conhecido.
 - [x] Implementar reconstrução experimental de PLY a partir de fotos reais. **Pendente validação no scanner físico.**
 - [ ] Gerar malha simples PLY/STL; medir erro contra objeto conhecido.
@@ -71,7 +71,7 @@ python -c 'import cv2, flask, numpy, gpiozero; print("Dependencies OK")'
 python -m web_interface.app
 ```
 
-Abrir http://scanner.local:5000. Inicialmente, checar vídeo e fiação, desativar Simulation Mode e reduzir para 12 captures para primeiro teste físico. **Atenção:** isso somente valida aquisição, ainda não gera uma nuvem verdadeira.
+Abrir http://scanner.local:5000. Primeiro verificar os cantos e confirmar o **sentido físico do giro**. O novo painel não inclui PLY simulado; `Gerar PLY real` só processa capturas físicas após câmera, eixo e laser calibrados. Interrompa o servidor antes de atualizar com Git; **não execute `git pull` com motor em movimento**.
 
 ## Originalidade e referências
 
