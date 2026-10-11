@@ -730,6 +730,7 @@
               <label for="calibSquare">Measured square size (mm)</label>
               <input id="calibSquare" type="number" step="0.01" min="1" max="100" value="10.00" />
               <span class="card-description">9 columns × 6 rows of internal corners</span>
+              <button id="calibCheckBoard" class="calib-action" onclick="calibrationCheckBoard()" style="margin-top:10px">Check Board (no movement)</button>
             </div>
 
             <div class="calib-section">
@@ -1175,6 +1176,30 @@
           showMessage("Calibration could not start: " + error.message, "error");
         } finally {
           busyButton(id, false);
+        }
+      }
+
+      async function calibrationCheckBoard() {
+        busyButton("calibCheckBoard", true);
+        showMessage("Checking board in live camera. Motor will not move...", "info");
+        try {
+          const response = await requestJson("/api/calibration/workflow/check-board", {
+            method: "POST"
+          });
+          const data = response.data || {};
+          const feedback = response.message + " Resolution: " +
+            (data.image_size || []).join("x");
+          showMessage(feedback, data.board_detected ? "success" : "warning");
+          document.getElementById("calibProgressLabel").textContent = feedback;
+          if (data.preview_url) {
+            const img = document.getElementById("calibPreviewImage");
+            img.src = data.preview_url + "?t=" + Date.now();
+            document.getElementById("calibPreview").hidden = false;
+          }
+        } catch (error) {
+          showMessage("Board check failed: " + error.message, "error");
+        } finally {
+          busyButton("calibCheckBoard", false);
         }
       }
 
