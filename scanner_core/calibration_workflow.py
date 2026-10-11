@@ -87,6 +87,10 @@ def calibration_status():
             "images": len(record.get("frames", [])),
             "board_found": sum(1 for f in record.get("frames", []) if f.get("corners")),
             "error": record.get("error"),
+            "preview_url": (
+                f"/api/calibration/workflow/diagnostics/{name}"
+                if (RUN_DIR / "diagnostics" / f"{name}.jpg").is_file() else None
+            ),
         }
     profiles = {}
     for kind, path in (("camera", CAMERA_FILE), ("turntable", AXIS_FILE),
@@ -166,6 +170,11 @@ def _capture_worker(kind, placement, square):
         folder.mkdir(parents=True, exist_ok=True)
         for previous in folder.glob("frame_*.jpg"):
             previous.unlink()
+        diag = RUN_DIR / "diagnostics"
+        diag.mkdir(parents=True, exist_ok=True)
+        overlay_file = diag / f"{key}.jpg"
+        if overlay_file.exists():
+            overlay_file.unlink()
         _save_json(RUN_FILE, run)
 
         # No simulated motor allowed during calibration. All captures have
@@ -191,6 +200,12 @@ def _capture_worker(kind, placement, square):
                 if not cv2.imwrite(str(file), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]):
                     raise CalibrationFailure(f"Could not save {file}.")
                 corners = find_board(frame)
+                if corners is not None:
+                    overlay = frame.copy()
+                    cv2.drawChessboardCorners(
+                        overlay, (BOARD_COLUMNS, BOARD_ROWS), corners, True
+                    )
+                    cv2.imwrite(str(overlay_file), overlay)
                 record["frames"].append({
                     "filename": file.relative_to(RUN_DIR).as_posix(),
                     "angle_deg": motor.position * 360.0 / MOTOR_HALF_STEPS_PER_REV,
