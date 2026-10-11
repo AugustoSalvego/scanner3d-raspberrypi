@@ -21,6 +21,17 @@ jobs:
       - name: Validate Python syntax
         run: |
           python -m compileall -q scanner_core web_interface tests
-      - name: Test calibration geometry
+      - name: Validate dashboard JavaScript
         run: |
-          python -m pytest tests/test_calibration_geometry.py -q
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("web_interface/templates/index.html").read_text()
+          scripts = re.findall(r"<script[^>]*>([\\s\\S]*?)</script>", html)
+          assert scripts, "No dashboard script found"
+          Path("/tmp/scanner-dashboard.js").write_text("\\n".join(scripts))
+          PY
+          node --check /tmp/scanner-dashboard.js
+      - name: Test calibration geometry and Flask API
+        run: |
+          python -m pytest tests/test_calibration_geometry.py tests/test_calibration_api.py -q
