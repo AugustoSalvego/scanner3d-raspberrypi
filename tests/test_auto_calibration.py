@@ -340,6 +340,40 @@ class TestComputation:
         assert report.saved is False
         assert any("disagree about the axis" in issue for issue in report.issues)
 
+    def test_a_laser_that_moves_between_placements_is_reported(self, tmp_path, scene):
+        """Seen on the real scanner: the laser line on the back wall sat at a
+        different place in each step while the camera had not moved."""
+
+        camera, motor = _rig(scene)
+        store = CalibrationStore(directory=tmp_path / "calibration")
+
+        for step, offset in ((1, 0.0), (2, -4.0), (3, 3.0)):
+            scene.laser_offset_mm = offset
+            _capture_all(tmp_path / "run", camera, motor, steps=(step,))
+
+        report = compute_auto_calibration(tmp_path / "run", _detector(), store=store)
+
+        assert report.saved is False
+        assert any("laser moved between the steps" in issue for issue in report.issues)
+
+        # Shifts are reported along the laser normal pointed to the camera's
+        # right, so a positive value means the line moved right in the image.
+        sense = np.sign((scene.R_wc @ scene.laser_normal_w)[0])
+        shifts = report.laser["shift_by_step_mm"]
+
+        assert shifts["1"] == 0.0
+        assert shifts["2"] == pytest.approx(-4.0 * sense, abs=0.3)
+        assert shifts["3"] == pytest.approx(3.0 * sense, abs=0.3)
+
+    def test_a_steady_laser_reports_small_shifts(self, tmp_path, scene):
+        camera, motor = _rig(scene)
+
+        _capture_all(tmp_path / "run", camera, motor)
+
+        report = compute_auto_calibration(tmp_path / "run", _detector())
+
+        assert max(abs(value) for value in report.laser["shift_by_step_mm"].values()) < 0.3
+
     def test_nothing_captured(self, tmp_path):
         with pytest.raises(CalibrationError, match="Nothing has been captured"):
             compute_auto_calibration(tmp_path / "run", _detector())

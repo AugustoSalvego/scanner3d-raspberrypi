@@ -95,6 +95,13 @@ VIEW_OUTLIER_FACTOR = 3.0
 MAX_AXIS_DISAGREEMENT_DEG = 2.0
 MAX_AXIS_SPREAD_MM = 1.5
 
+#: The laser points of each step must lie on the same plane within this many
+#: millimetres. A larger spread means the laser holder turned or slid between
+#: the steps, and a plane fitted through all of them describes no real laser.
+MAX_LASER_SHIFT_MM = 1.0
+#: Fewer laser photographs than this in a step make its shift too noisy to judge.
+MIN_LASER_VIEWS_FOR_SHIFT = 3
+
 JPEG_QUALITY = 95
 
 #: Sub-folder of ``outputs/diagnostics`` holding the per-step overlay images,
@@ -594,6 +601,83 @@ def _laser_points_on_board(
     return points[valid], pixels[valid], detection.point_count
 
 
+def _laser_shift_by_step(samples: list[LaserPoseSample], steps: list[int]) -> dict[int, float]:
+    """How far, in mm along the laser normal, each step's line sits from the first step's.
+
+    The points are fitted with parallel planes, one per step, sharing a normal:
+    each step is centred on its own centroid and the normal is the direction of
+    least spread of all the centred points together. A shift between steps is
+    then the gap between their planes. (A single plane through every point
+    would tilt to absorb part of a shift and under-report it.) With a steady
+    laser the steps agree within a few tenths of a mm; a laser that turned or
+    slid in its holder between steps shows up as millimetres. Steps with too
+    few photographs are left out rather than reported as noise.
+    """
+
+    grouped: dict[int, list[np.ndarray]] = {}
+
+    for sample, step in zip(samples, steps):
+        grouped.setdefault(step, []).append(np.asarray(sample.points_camera, dtype=np.float64))
+
+    clouds = {
+        step: np.vstack(parts)
+        for step, parts in sorted(grouped.items())
+        if len(parts) >= MIN_LASER_VIEWS_FOR_SHIFT
+    }
+
+    if not clouds:
+        return {}
+
+    normal = _shared_normal(clouds)
+
+    if normal is None:
+        return {}
+
+    # A first pass may be pulled by stray points (reflections, the board edge):
+    # drop the points far from their step's plane and fit once more.
+    trimmed: dict[int, np.ndarray] = {}
+
+    for step, points in clouds.items():
+        distance = points @ normal
+        residual = np.abs(distance - np.median(distance))
+        limit = max(0.5, 3.0 * 1.4826 * float(np.median(residual)))
+        kept = points[residual <= limit]
+        trimmed[step] = kept if len(kept) >= 3 else points
+
+    normal = _shared_normal(trimmed)
+
+    if normal is None:
+        return {}
+
+    # The normal's sign is arbitrary; point it to the camera's right so a
+    # positive shift means the line moved right in the image, for every run.
+    if normal[0] < 0:
+        normal = -normal
+
+    level = {step: float(np.median(points @ normal)) for step, points in trimmed.items()}
+    reference = level[min(level)]
+
+    return {step: value - reference for step, value in level.items()}
+
+
+def _shared_normal(clouds: dict[int, np.ndarray]) -> np.ndarray | None:
+    centred = np.vstack([points - points.mean(axis=0) for points in clouds.values()])
+
+    if len(centred) < 3:
+        return None
+
+    try:
+        _, singular, vt = np.linalg.svd(centred, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return None
+
+    # A cloud that is only a line has no defined normal.
+    if singular[1] <= 1e-9 * max(float(singular[0]), 1.0):
+        return None
+
+    return vt[-1]
+
+
 def _write_overlay(
     target: Path, image: np.ndarray, view: _View, spec: CheckerboardSpec, pixels: np.ndarray
 ) -> bool:
@@ -763,6 +847,7 @@ def compute_auto_calibration(
 
     # --- laser plane ------------------------------------------------------
     samples: list[LaserPoseSample] = []
+    sample_steps: list[int] = []
     best_view: dict[int, tuple[int, _View, np.ndarray, np.ndarray]] = {}
     laser_pixels_total = 0
 
@@ -791,9 +876,11 @@ def compute_auto_calibration(
                     rejected_pixel_count=int(total - len(points)),
                 )
             )
+            sample_steps.append(view.step)
 
     laser_profile = None
     outliers = 0
+    shifts = _laser_shift_by_step(samples, sample_steps)
 
     if len(samples) >= 2:
         everything = np.vstack([sample.points_camera for sample in samples])
@@ -821,7 +908,18 @@ def compute_auto_calibration(
         "laser_pixels_detected": int(laser_pixels_total),
         "points": int(sum(len(sample.points_camera) for sample in samples)),
         "outliers_removed": outliers,
+        "shift_by_step_mm": {str(step): round(value, 2) for step, value in shifts.items()},
     }
+    moved = len(shifts) > 1 and (max(shifts.values()) - min(shifts.values())) > MAX_LASER_SHIFT_MM
+
+    if moved:
+        listing = ", ".join(f"step {step}: {value:+.1f} mm" for step, value in shifts.items())
+        report.issues.append(
+            "Laser: the laser moved between the steps "
+            f"({listing}, measured against step {min(shifts)}). The laser plane only "
+            "exists if the laser stays still: fix the laser holder so it cannot turn or "
+            "slide, do not touch the box during the steps, then run the three steps again."
+        )
 
     if len(samples) < 2:
         report.issues.append(
@@ -853,6 +951,9 @@ def compute_auto_calibration(
             if not laser_profile.valid:
                 report.issues.extend(f"Laser: {issue}" for issue in laser_profile.issues)
                 laser_profile = None
+
+        if moved:
+            laser_profile = None
 
     # --- diagnostics ------------------------------------------------------
     if diagnostics_dir is not None:

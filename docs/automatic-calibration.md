@@ -16,6 +16,12 @@ steps.
   their final position.
 - The laser on. The reference build cannot switch it by software, and the board
   is still found with the laser line crossing it.
+- The laser **fixed so it cannot turn or slide** in its holder. Its line must
+  stay in the same place for the whole calibration (and afterwards, for every
+  scan). If it moves, the laser part of the calibration is refused (see below).
+- **Laser detection** (Scan Configuration card) set to match the lighting:
+  *Red channel* in a box lit with green or blue LEDs, where the laser looks
+  white on the paper; *Colour (HSV)* under white or warm light.
 
 ## Procedure
 
@@ -58,6 +64,12 @@ capturing again:
   in every photograph (everything else is masked out) and back-projected onto
   the board plane, which the lens calibration makes known in millimetres.
   Points from all photographs are pooled into one plane.
+- **Laser stability**: before pooling, the points of each step are fitted as
+  parallel planes sharing one direction, and the gap between them is reported
+  per step (`shift_by_step_mm`, measured against step 1; positive means the
+  line moved right in the image). More than 1 mm between steps means the laser
+  moved between the placements, and the laser plane is refused, since no single
+  plane describes a laser that was in two places.
 
 Lens, turntable and laser are saved **together or not at all**: a run that
 cannot produce a consistent set never overwrites the calibration on disk.
@@ -71,8 +83,13 @@ the detected corners, and in green the laser points that were used.
 - *Turntable: the placements agree within ...*: large values mean wobble.
 - *Laser: line found on N of M photographs*: if N is low, open the overlays. A
   laser line visible in the photograph but not marked in green means the
-  detector thresholds (hue, saturation, value) do not match how this camera
-  sees the laser.
+  detector does not match how this camera sees the laser: try the other
+  **Laser detection** method, then **Compute and save** again (no new
+  photographs needed).
+- *Laser: the laser moved between the steps (step 2: -3.8 mm, ...)*: the laser
+  holder turned or slid, or the box was bumped. Fix the laser firmly, do not
+  touch the box while a step runs, and run the three steps again: these
+  photographs cannot be reused for the laser.
 
 ## Files
 

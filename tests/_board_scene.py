@@ -38,6 +38,9 @@ class BoardTurntableScene:
     pitch_deg: float = 10.0
     axis_tilt_deg: float = 0.0
     laser_angle_deg: float = 32.0
+    #: Shift of the laser sheet along its normal, in mm.  Changing it between
+    #: placements imitates a laser holder that moves when the board is handled.
+    laser_offset_mm: float = 0.0
     columns: int = 9
     rows: int = 6
     square_mm: float = 10.0
@@ -96,7 +99,7 @@ class BoardTurntableScene:
     @property
     def laser_plane_camera(self) -> tuple[np.ndarray, float]:
         normal = self.R_wc @ self.laser_normal_w
-        point = self.R_wc @ (np.zeros(3) - self.C_w)
+        point = self.R_wc @ (self.laser_offset_mm * self.laser_normal_w - self.C_w)
 
         return normal, float(-normal @ point)
 
