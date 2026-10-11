@@ -350,3 +350,118 @@ class TestComputation:
         _capture_all(tmp_path, camera, motor, steps=(1,))
 
         json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
+
+
+class TestThroughTheController:
+    """The same path the dashboard button takes: background steps, then compute."""
+
+    def _controller(self, tmp_path, scene, mode="physical"):
+        import time  # noqa: F401 - used by _wait
+
+        from scanner_core.calibration.store import CalibrationBundle
+        from scanner_core.config import ConfigStore, LaserConfig, ScannerMode
+        from scanner_core.hardware.factory import HardwareSet
+        from scanner_core.hardware.laser import ExternalLaser
+        from scanner_core.pipeline import ScanController
+        from scanner_core.session import SessionManager
+        from scanner_core.state import StateStore
+
+        config = ConfigStore(path=tmp_path / "config.json")
+        config.update(
+            {"mode": mode, "scan": {"settle_delay": 0.0}, "detector": {"min_points": 10}},
+            persist=False,
+        )
+
+        controller = ScanController(
+            configuration=config,
+            state=StateStore(),
+            sessions=SessionManager(root=tmp_path / "scans"),
+            calibration=CalibrationStore(directory=tmp_path / "calibration"),
+        )
+        controller.auto_calibration_stops = STOPS
+
+        camera, motor = _rig(scene)
+        hardware = HardwareSet(
+            camera=camera,
+            motor=motor,
+            laser=ExternalLaser(LaserConfig()),
+            calibration=CalibrationBundle(),
+            mode=ScannerMode.PHYSICAL,
+        )
+
+        # Stand-in for the real webcam and GPIO motor.
+        controller._ensure_hardware = lambda _config: hardware
+
+        return controller, camera
+
+    @staticmethod
+    def _wait(controller, timeout=180.0):
+        import time
+
+        deadline = time.monotonic() + timeout
+
+        while controller.auto_calibration_status()["progress"]["running"]:
+            assert time.monotonic() < deadline, "calibration step did not finish"
+            time.sleep(0.05)
+
+    def test_three_steps_then_compute(self, tmp_path, scene):
+        controller, camera = self._controller(tmp_path, scene)
+
+        for step in (1, 2, 3):
+            camera.tilt = TILTS[step]
+
+            controller.start_auto_calibration_step(step, SPEC)
+            self._wait(controller)
+
+            status = controller.auto_calibration_status()
+
+            assert status["progress"]["error"] is None
+            assert status["run"]["steps"][str(step)]["status"] == "complete"
+            assert status["run"]["steps"][str(step)]["board_found"] >= 6
+
+        assert not controller.is_running
+        assert controller.auto_calibration_status()["run"]["ready_to_compute"] is True
+
+        report = controller.compute_auto_calibration()
+
+        assert report.saved is True
+        assert controller._calibration.load_bundle().is_ready()
+
+        # A physical scan now passes the calibration check it used to fail.
+        session = controller._prepare_scan(controller._config_store.get())
+
+        assert session.metadata()["calibration"]["camera"]["source"] == "auto_turntable"
+
+    def test_one_thing_at_a_time_and_stop_works(self, tmp_path, scene):
+        from scanner_core.errors import ScanAlreadyRunning
+
+        controller, _ = self._controller(tmp_path, scene)
+
+        controller.start_auto_calibration_step(1, SPEC)
+
+        try:
+            with pytest.raises(ScanAlreadyRunning):
+                controller.start_auto_calibration_step(2, SPEC)
+
+            with pytest.raises(ScanAlreadyRunning):
+                controller.compute_auto_calibration()
+        finally:
+            assert controller.request_stop() is True
+            self._wait(controller)
+
+        status = controller.auto_calibration_status()
+
+        assert status["progress"]["message"] == "Step 1 cancelled."
+        assert status["run"]["steps"]["1"]["status"] == "cancelled"
+        assert not controller.is_running
+
+    def test_refused_outside_physical_mode(self, tmp_path, scene):
+        from scanner_core.errors import ConfigurationError
+
+        controller, _ = self._controller(tmp_path, scene, mode="simulation")
+
+        with pytest.raises(ConfigurationError, match="physical"):
+            controller.start_auto_calibration_step(1, SPEC)
+
+        # The refusal must not leave the scanner locked.
+        assert not controller.is_running

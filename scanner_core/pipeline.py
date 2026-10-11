@@ -31,6 +31,19 @@ from typing import Any, Callable
 import cv2
 
 from scanner_core import logger, paths
+from scanner_core.calibration.auto import (
+    DEFAULT_STOPS as AUTO_CALIBRATION_STOPS,
+    DIAGNOSTICS_RUN as AUTO_CALIBRATION_DIAGNOSTICS,
+    STEPS as AUTO_CALIBRATION_STEPS,
+    AutoCalibrationReport,
+    capture_step,
+    compute_auto_calibration,
+    load_run,
+    reset_run,
+    run_directory,
+    summarize_run,
+)
+from scanner_core.calibration.camera import CheckerboardSpec
 from scanner_core.calibration.store import CalibrationStore, calibration_store
 from scanner_core.config import ConfigStore, ScannerConfig, ScannerMode, config_store
 from scanner_core.errors import (
@@ -99,6 +112,20 @@ class ScanController:
         self._hardware: HardwareSet | None = None
         self._hardware_mode: ScannerMode | None = None
         self._hardware_signature: str | None = None
+
+        # The automatic calibration shares the scan mutex, the cancel event and
+        # the devices: only one of them can drive the motor at a time.
+        self.auto_calibration_stops = AUTO_CALIBRATION_STOPS
+        self._auto_lock = threading.Lock()
+        self._auto_progress: dict[str, Any] = {
+            "running": False,
+            "step": None,
+            "done": 0,
+            "total": 0,
+            "board_found": 0,
+            "message": None,
+            "error": None,
+        }
 
     # ------------------------------------------------------------------
     # Hardware lifecycle
@@ -635,6 +662,174 @@ class ScanController:
 
         if self._cancel_event.wait(timeout=seconds):
             raise ScanCancelled("Scan cancelled while waiting.")
+
+    # ------------------------------------------------------------------
+    # Automatic calibration
+    # ------------------------------------------------------------------
+    @property
+    def auto_calibration_directory(self) -> Path:
+        return run_directory(self._calibration.directory)
+
+    def _update_auto_progress(self, **values: Any) -> None:
+        with self._auto_lock:
+            self._auto_progress.update(values)
+
+    def auto_calibration_status(self) -> dict[str, Any]:
+        """Live progress of a running step plus a summary of the stored run."""
+
+        with self._auto_lock:
+            progress = dict(self._auto_progress)
+
+        try:
+            run = summarize_run(load_run(self.auto_calibration_directory))
+        except CalibrationError as error:
+            run = summarize_run(None)
+            run["error"] = str(error)
+
+        return {"progress": progress, "run": run}
+
+    def start_auto_calibration_step(self, step: int, spec: CheckerboardSpec) -> None:
+        """Turn the platform once and photograph the board, in the background."""
+
+        if step not in AUTO_CALIBRATION_STEPS:
+            raise CalibrationError(f"Unknown calibration step {step}; use 1, 2 or 3.")
+
+        spec.validate()
+
+        if not self._scan_mutex.acquire(blocking=False):
+            raise ScanAlreadyRunning("A scan or a calibration step is already running.")
+
+        try:
+            config = self._config_store.get()
+
+            if config.mode is not ScannerMode.PHYSICAL:
+                raise ConfigurationError(
+                    "The automatic calibration drives the physical scanner. Switch to "
+                    "physical mode first; simulation mode already uses the exact "
+                    "geometry of its virtual rig."
+                )
+
+            hardware = self._ensure_hardware(config)
+
+            self._cancel_event.clear()
+            self._update_auto_progress(
+                running=True,
+                step=step,
+                done=0,
+                total=self.auto_calibration_stops,
+                board_found=0,
+                message=f"Step {step} running.",
+                error=None,
+            )
+        except BaseException:
+            self._scan_mutex.release()
+            raise
+
+        threading.Thread(
+            target=self._run_auto_step_locked,
+            args=(config, hardware, step, spec),
+            name=f"auto-calibration-step-{step}",
+            daemon=True,
+        ).start()
+
+    def _run_auto_step_locked(
+        self,
+        config: ScannerConfig,
+        hardware: HardwareSet,
+        step: int,
+        spec: CheckerboardSpec,
+    ) -> None:
+        """Body of a calibration step.  The scan mutex is held on entry."""
+
+        try:
+            logger.info(f"Automatic calibration step {step} started.")
+
+            record = capture_step(
+                step,
+                camera=hardware.camera,
+                motor=hardware.motor,
+                spec=spec,
+                directory=self.auto_calibration_directory,
+                steps_per_revolution=config.motor.steps_per_revolution,
+                stops=self.auto_calibration_stops,
+                settle_delay=config.scan.settle_delay,
+                flush_frames=config.camera.flush_frames,
+                progress=lambda values: self._update_auto_progress(**values),
+                should_cancel=self._cancel_event.is_set,
+            )
+
+            frames = record["frames"]
+            found = sum(1 for frame in frames if frame.get("corners"))
+            message = f"Step {step} done: board found in {found} of {len(frames)} photographs."
+
+            logger.info(message)
+            self._update_auto_progress(message=message, error=None)
+
+        except ScanCancelled:
+            logger.warning(f"Automatic calibration step {step} cancelled.")
+            self._update_auto_progress(message=f"Step {step} cancelled.", error=None)
+
+        except ScannerError as error:
+            logger.error(f"Automatic calibration step {step} failed: {error}")
+            self._update_auto_progress(message=f"Step {step} failed.", error=str(error))
+
+        except Exception as error:  # noqa: BLE001 - keep the scanner alive
+            logger.error(
+                f"Automatic calibration step {step} failed unexpectedly: {error}", exc_info=True
+            )
+            self._update_auto_progress(
+                message=f"Step {step} failed.", error=f"Unexpected failure: {error}"
+            )
+
+        finally:
+            for close in (hardware.motor.release, hardware.motor.close):
+                try:
+                    close()
+                except Exception:  # noqa: BLE001 - best effort
+                    pass
+
+            self._update_auto_progress(running=False)
+            self._cancel_event.clear()
+            self._scan_mutex.release()
+
+    def compute_auto_calibration(self) -> AutoCalibrationReport:
+        """Compute and, if everything passes, save the calibration."""
+
+        if not self._scan_mutex.acquire(blocking=False):
+            raise ScanAlreadyRunning("Wait for the running scan or calibration step to finish.")
+
+        try:
+            config = self._config_store.get()
+
+            report = compute_auto_calibration(
+                self.auto_calibration_directory,
+                LaserLineDetector(config.detector),
+                store=self._calibration,
+                diagnostics_dir=paths.DIAGNOSTICS_DIR / AUTO_CALIBRATION_DIAGNOSTICS,
+            )
+        finally:
+            self._scan_mutex.release()
+
+        if report.saved:
+            logger.info("Automatic calibration saved (lens, turntable and laser plane).")
+        else:
+            logger.warning(
+                "Automatic calibration not saved: " + "; ".join(report.issues or ["see report"])
+            )
+
+        return report
+
+    def reset_auto_calibration(self) -> None:
+        """Forget every photograph of the current automatic calibration."""
+
+        if self.is_running:
+            raise ScanAlreadyRunning("Wait for the running scan or calibration step to finish.")
+
+        reset_run(self.auto_calibration_directory)
+
+        self._update_auto_progress(
+            step=None, done=0, total=0, board_found=0, message=None, error=None
+        )
 
     # ------------------------------------------------------------------
     # Reconstruction

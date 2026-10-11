@@ -266,7 +266,7 @@
             </div>
             <div>
               <label for="boardSquare">Square size (mm)</label>
-              <input id="boardSquare" type="number" min="1" step="0.1" value="25" />
+              <input id="boardSquare" type="number" min="1" step="0.01" value="10" />
             </div>
             <div>
               <label for="cameraFolder">Camera image folder</label>
@@ -277,6 +277,60 @@
               <input id="laserFolder" type="text" value="laser" />
             </div>
           </div>
+
+          <h3 style="font-size: 13px; margin: 18px 0 6px">
+            Automatic calibration (board on the turntable)
+          </h3>
+          <p class="hint" style="margin: 0 0 10px">
+            Uses the checkerboard values above: type the square size you measured
+            with a ruler. Keep the laser on and do not touch the camera between
+            steps. Each step turns the platform once and takes 36 photographs.
+          </p>
+
+          <div class="auto-steps">
+            <div class="auto-step">
+              <div class="auto-step-text">
+                <strong>1. Upright</strong>
+                <span>Board standing 2-3 cm in front of the centre pin, printed side facing the camera.</span>
+              </div>
+              <div class="auto-step-actions">
+                <span class="auto-step-status" id="autoStatus1">not done</span>
+                <button class="small" id="autoStep1">Run step 1</button>
+              </div>
+            </div>
+            <div class="auto-step">
+              <div class="auto-step-text">
+                <strong>2. Leaning back</strong>
+                <span>Same place, tilted back 15-25 degrees like a picture frame, facing the camera.</span>
+              </div>
+              <div class="auto-step-actions">
+                <span class="auto-step-status" id="autoStatus2">not done</span>
+                <button class="small" id="autoStep2">Run step 2</button>
+              </div>
+            </div>
+            <div class="auto-step">
+              <div class="auto-step-text">
+                <strong>3. Leaning forward</strong>
+                <span>Same place, tilted forward 15-25 degrees, facing the camera.</span>
+              </div>
+              <div class="auto-step-actions">
+                <span class="auto-step-status" id="autoStatus3">not done</span>
+                <button class="small" id="autoStep3">Run step 3</button>
+              </div>
+            </div>
+          </div>
+
+          <p class="note" id="autoProgress"></p>
+
+          <div class="button-row" style="margin-top: 10px">
+            <button id="autoCompute">Compute and save</button>
+            <button class="ghost" id="autoStop">Stop</button>
+            <button class="ghost" id="autoReset">Start over</button>
+          </div>
+
+          <div id="autoResult"></div>
+
+          <h3 style="font-size: 13px; margin: 18px 0 8px">Manual calibration (image folders)</h3>
 
           <div class="button-row" style="margin-top: 12px">
             <button id="calibrateCamera">Calibrate camera</button>

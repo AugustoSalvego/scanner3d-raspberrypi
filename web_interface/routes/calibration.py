@@ -15,6 +15,7 @@ from scanner_core.calibration import (
     calibrate_laser_plane_from_folder,
     calibration_store,
 )
+from scanner_core.calibration.auto import DIAGNOSTICS_RUN as AUTO_CALIBRATION_DIAGNOSTICS
 from scanner_core.config import config_store
 from scanner_core.errors import CalibrationError, UnsafePathError
 from scanner_core.laser_detection import LaserLineDetector, detection_to_diagnostics
@@ -192,6 +193,83 @@ def calibrate_turntable_manual():
         {"file": path.name, "calibration": profile.to_dict()},
         201,
     )
+
+
+# ----------------------------------------------------------------------
+# Automatic calibration (board standing on the turntable)
+# ----------------------------------------------------------------------
+@blueprint.get("/api/calibration/auto")
+def auto_status():
+    status = scan_controller.auto_calibration_status()
+
+    result = (status["run"] or {}).get("result") or {}
+    status["diagnostics_urls"] = [
+        f"/diagnostics/{AUTO_CALIBRATION_DIAGNOSTICS}/{name}"
+        for name in result.get("diagnostics", [])
+    ]
+
+    return api_success("Automatic calibration.", status)
+
+
+@blueprint.post("/api/calibration/auto/step/<int:step>")
+def auto_step(step: int):
+    """Turn the platform once and photograph the board for one placement."""
+
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        spec = _spec_from_payload(payload)
+    except (TypeError, ValueError) as error:
+        return error_from_exception(CalibrationError(f"Invalid checkerboard values: {error}"))
+    except CalibrationError as error:
+        return error_from_exception(error)
+
+    try:
+        scan_controller.start_auto_calibration_step(step, spec)
+    except Exception as error:  # noqa: BLE001 - translated for the client
+        return error_from_exception(error)
+
+    return api_success(f"Calibration step {step} started.", scan_controller.auto_calibration_status(), 202)
+
+
+@blueprint.post("/api/calibration/auto/stop")
+def auto_stop():
+    if not scan_controller.request_stop():
+        return api_error("Nothing is running.", 409)
+
+    return api_success("Stop requested; the step ends at the next stop of the platform.")
+
+
+@blueprint.post("/api/calibration/auto/compute")
+def auto_compute():
+    """Compute lens, turntable and laser plane from the stored photographs."""
+
+    try:
+        report = scan_controller.compute_auto_calibration()
+    except Exception as error:  # noqa: BLE001 - translated for the client
+        return error_from_exception(error)
+
+    payload = report.to_dict()
+    payload["diagnostics_urls"] = [
+        f"/diagnostics/{AUTO_CALIBRATION_DIAGNOSTICS}/{name}" for name in report.diagnostics
+    ]
+
+    if not report.saved:
+        return api_error(
+            "The calibration did not pass; nothing was saved. See the report.", 422, payload
+        )
+
+    return api_success("Calibration saved.", payload, 201)
+
+
+@blueprint.post("/api/calibration/auto/reset")
+def auto_reset():
+    try:
+        scan_controller.reset_auto_calibration()
+    except Exception as error:  # noqa: BLE001 - translated for the client
+        return error_from_exception(error)
+
+    return api_success("Automatic calibration photographs removed.")
 
 
 @blueprint.post("/api/calibration/laser/diagnose")

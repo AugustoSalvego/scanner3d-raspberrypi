@@ -52,6 +52,7 @@ class TestEnvelope:
             "/api/settings",
             "/api/settings/mode",
             "/api/calibration",
+            "/api/calibration/auto",
             "/api/point-clouds",
             "/api/scan/sessions",
             "/api/camera/captures",
@@ -379,6 +380,46 @@ class TestCalibrationEndpoints:
 
         assert calibration["camera"]["valid"] is False
         assert calibration["ready_for_physical_scan"] is False
+
+
+class TestAutomaticCalibrationEndpoints:
+    def test_status_lists_the_three_steps(self, client):
+        body = data(client.get("/api/calibration/auto"))
+
+        assert body["progress"]["running"] is False
+        assert [body["run"]["steps"][key]["status"] for key in ("1", "2", "3")] == ["pending"] * 3
+        assert body["run"]["ready_to_compute"] is False
+
+    def test_steps_need_physical_mode(self, client):
+        response = client.post("/api/calibration/auto/step/1", json={})
+
+        assert response.status_code == 422
+        assert "physical" in payload(response)["message"]
+
+    def test_unknown_step(self, client):
+        response = client.post("/api/calibration/auto/step/7", json={})
+
+        assert response.status_code == 422
+
+    def test_invalid_board_values(self, client):
+        response = client.post(
+            "/api/calibration/auto/step/1",
+            json={"checkerboard": {"columns": 6, "rows": 6, "square_size_mm": 10}},
+        )
+
+        assert response.status_code == 422
+
+    def test_compute_without_photographs(self, client):
+        response = client.post("/api/calibration/auto/compute")
+
+        assert response.status_code == 422
+        assert "Nothing has been captured" in payload(response)["message"]
+
+    def test_stop_when_idle(self, client):
+        assert client.post("/api/calibration/auto/stop").status_code == 409
+
+    def test_reset(self, client):
+        assert data(client.post("/api/calibration/auto/reset")) == {}
 
 
 class TestCameraEndpoints:

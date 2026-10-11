@@ -397,33 +397,26 @@ Expected future behavior:
 
 ## Calibration
 
-Calibration is planned but not fully implemented yet.
+The scanner needs three calibrations before a physical scan: lens, turntable
+axis and laser plane.
 
-The project already includes:
-
-- Calibration planning documentation
-- Calibration status endpoint
-- Basic calibration file structure
-- Placeholder calibration module
-
-Calibration areas planned:
-
-- Camera intrinsic calibration
-- Lens distortion correction
-- Laser plane calibration
-- Turntable center calibration
-- Scale calibration
-
-More details:
+The recommended way is the **automatic calibration** in the dashboard: the
+checkerboard stands on the turntable in three placements (upright, leaning
+back, leaning forward), the platform turns once per placement and the
+software computes and saves all three calibrations. See:
 
 ```text
-docs/calibration-plan.md
+docs/automatic-calibration.md
 ```
 
-Current endpoint:
+Manual calibration from folders of photographs, and a hand-measured turntable
+axis, are still available in the same card and through
+`python -m tools.calibrate`.
+
+Status endpoint:
 
 ```text
-GET /calibration/status
+GET /api/calibration
 ```
 
 ---
@@ -467,6 +460,7 @@ Project documentation:
 ```text
 docs/api.md
 docs/software-architecture.md
+docs/automatic-calibration.md
 docs/calibration-plan.md
 docs/3d-viewer-plan.md
 docs/hardware-integration-plan.md

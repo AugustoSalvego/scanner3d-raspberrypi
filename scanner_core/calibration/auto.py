@@ -97,6 +97,10 @@ MAX_AXIS_SPREAD_MM = 1.5
 
 JPEG_QUALITY = 95
 
+#: Sub-folder of ``outputs/diagnostics`` holding the per-step overlay images,
+#: so the existing ``/diagnostics/<run>/<file>`` route serves them.
+DIAGNOSTICS_RUN = "auto_calibration"
+
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
