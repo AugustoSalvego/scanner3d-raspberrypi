@@ -118,3 +118,29 @@ def test_laser_plane_reconstructed_from_bright_red_stripes():
     # the fitted plane to Z=0 magnifies subpixel line-centre measurement bias.
     predicted_x_at_board = -(result["plane_offset_mm"] + n[2] * 560.0) / n[0]
     assert abs(predicted_x_at_board - 8.0) < 1.0
+
+
+def test_single_upright_orbit_estimates_rotation_axis():
+    """Functional-first method: no forward/backward checkerboard tilts."""
+    observed = []
+    for angle in range(0, 121, 10):
+        corners, _, _ = project_board(angle, 0)
+        observed.append((angle, corners))
+    axis = compute_axis({"1": observed}, SQUARE, PROFILE)
+    assert axis["calibrated"] is True
+    assert axis["single_orientation"] is True
+    assert axis["limited_validation"] is True
+    assert len(axis["placements"]) == 1
+    direction = np.array(axis["axis_direction_camera"])
+    assert abs(float(direction @ np.array([0., 1., 0.]))) > .99
+    center = np.array(axis["axis_origin_camera_mm"])
+    assert np.linalg.norm(np.cross(center - PIVOT, direction)) < 1.5
+
+
+def test_single_upright_orbit_rejects_too_small_visible_arc():
+    observed = []
+    for angle in (0, 10, 20, 30, 40, 45, 46, 47):
+        corners, _, _ = project_board(angle, 0)
+        observed.append((angle, corners))
+    with pytest.raises(CalibrationFailure, match="50 degrees"):
+        compute_axis({"1": observed}, SQUARE, PROFILE)
