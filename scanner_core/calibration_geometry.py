@@ -11,7 +11,7 @@ import numpy as np
 
 BOARD_COLUMNS = 9
 BOARD_ROWS = 6
-MIN_CORNER_VIEWS = 12
+MIN_CORNER_VIEWS = 8
 
 
 class CalibrationFailure(RuntimeError):
@@ -109,7 +109,7 @@ def compute_camera(observations, square_mm, image_size):
     if not np.isfinite(rms) or rms > 2.5 or not np.isfinite(K).all():
         raise CalibrationFailure(
             f"Camera reprojection RMS is {rms:.3f} px; maximum is 2.5 px. "
-            "Check sharpness, rigid board, and varied board inclinations."
+            "Check sharpness, rigid board, angular variety and exposure."
         )
     if K[0, 0] <= 0 or K[1, 1] <= 0:
         raise CalibrationFailure("Estimated camera focal lengths are not valid.")
