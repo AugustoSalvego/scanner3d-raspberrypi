@@ -195,6 +195,15 @@
             </div>
 
             <div>
+              <label for="detectorMethod">Laser detection</label>
+              <select id="detectorMethod">
+                <option value="hsv" title="For white or warm light">Colour (HSV)</option>
+                <option value="red_channel" title="For a box lit green or blue">Red channel</option>
+                <option value="difference" title="Needs a laser switched by software">Difference</option>
+              </select>
+            </div>
+
+            <div>
               <label for="saturationMin">Detector min saturation</label>
               <input id="saturationMin" type="number" min="0" max="255" step="1" />
             </div>

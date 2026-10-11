@@ -468,6 +468,7 @@
     $("cameraFourcc").value = settings.camera.fourcc || "";
     $("flushFrames").value = settings.camera.flush_frames;
 
+    $("detectorMethod").value = settings.detector.method;
     $("saturationMin").value = settings.detector.saturation_min;
     $("valueMin").value = settings.detector.value_min;
     $("minConfidence").value = settings.detector.min_confidence;
@@ -495,6 +496,7 @@
         flush_frames: Number($("flushFrames").value),
       },
       detector: {
+        method: $("detectorMethod").value,
         saturation_min: Number($("saturationMin").value),
         value_min: Number($("valueMin").value),
         min_confidence: Number($("minConfidence").value),

@@ -344,12 +344,21 @@ class DetectorConfig:
     roi: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
     #: Threshold on the laser-on minus laser-off difference image.
     difference_threshold: int = 25
+    #: ``red_channel`` method: minimum red value at the laser peak.
+    red_min: int = 120
+    #: ``red_channel`` method: keep only the pixels within this fraction of the
+    #: brightest red pixel of the scan line.  The laser glows into paper and
+    #: matt surfaces, asymmetrically; using the whole glow would pull the
+    #: centre towards the brighter side.
+    red_peak_ratio: float = 0.85
 
     def validate(self) -> None:
         method = str(self.method).strip().lower()
 
-        if method not in {"hsv", "difference"}:
-            raise ConfigurationError("detector.method must be 'hsv' or 'difference'.")
+        if method not in {"hsv", "difference", "red_channel"}:
+            raise ConfigurationError(
+                "detector.method must be 'hsv', 'difference' or 'red_channel'."
+            )
 
         self.method = method
 
@@ -379,6 +388,10 @@ class DetectorConfig:
         )
         self.difference_threshold = _require_int(
             self.difference_threshold, "detector.difference_threshold", minimum=1, maximum=255
+        )
+        self.red_min = _require_int(self.red_min, "detector.red_min", minimum=1, maximum=255)
+        self.red_peak_ratio = _require_number(
+            self.red_peak_ratio, "detector.red_peak_ratio", minimum=0.3, maximum=1.0
         )
 
         self.blur_kernel = _require_int(

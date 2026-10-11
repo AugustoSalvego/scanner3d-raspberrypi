@@ -239,6 +239,82 @@ class TestDifferenceMethod:
         assert not detection.accepted
 
 
+def frame_under_green_light(width=200, height=160, column=97.4, seed=3):
+    """A red laser on white paper in a box lit by green LEDs, as photographed.
+
+    The paper is cyan-ish and dark in red. The laser core saturates every
+    channel to near-white, so it is not "red" for a hue test any more, but it
+    still peaks at 255 in the red channel. The glow into the paper is stronger
+    on one side, as it was on the real board.
+    """
+
+    rng = np.random.default_rng(seed)
+    x = np.arange(width, dtype=np.float64)[None, :]
+    core = np.exp(-0.5 * ((x - column) / 1.6) ** 2)
+    glow = np.where(x > column, np.exp(-(x - column) / 6.0), 0.0)
+
+    red = 70 + 185 * core + 55 * glow
+    green = 190 + 70 * np.exp(-0.5 * ((x - column) / 1.1) ** 2)
+    blue = 165 + 70 * np.exp(-0.5 * ((x - column) / 1.0) ** 2)
+
+    image = np.empty((height, width, 3), dtype=np.float64)
+    image[:, :, 0] = blue
+    image[:, :, 1] = green
+    image[:, :, 2] = red
+    image += rng.normal(0.0, 2.0, image.shape)
+
+    return np.clip(np.rint(image), 0, 255).astype(np.uint8)
+
+
+class TestRedChannelMethod:
+    def test_finds_a_laser_that_looks_white_under_green_light(self):
+        """What the real scanner showed: the HSV test misses most of this line.
+
+        The tolerance is not the detector's: the glow adds to one side of the
+        core, so the clipped (255) top of the line is itself up to about half a
+        pixel off the true centre, and no threshold can see past the image.
+        """
+
+        for true_column in (60.0, 97.4, 140.6):
+            image = frame_under_green_light(column=true_column)
+            detection = make_detector(method="red_channel").detect(image)
+
+            assert detection.accepted
+            assert detection.point_count > 100
+            assert abs(float(np.median(detection.pixels[:, 0])) - true_column) < 0.75
+
+    def test_the_hsv_method_does_not_find_it(self):
+        detection = make_detector().detect(frame_under_green_light())
+
+        assert not detection.accepted or detection.point_count < 20
+
+    def test_the_glow_does_not_pull_the_centre(self):
+        """Keeping the whole glow would move the centre towards its bright side;
+        keeping only the top of the peak (the default ratio) does not."""
+
+        for true_column in (60.0, 97.4, 140.6):
+            image = frame_under_green_light(column=true_column)
+
+            tight = make_detector(method="red_channel").detect(image)
+            loose = make_detector(method="red_channel", red_min=80, red_peak_ratio=0.3).detect(image)
+
+            assert abs(float(np.median(tight.pixels[:, 0])) - true_column) < 0.75
+            assert abs(float(np.median(loose.pixels[:, 0])) - true_column) > 1.5
+
+    def test_rejects_a_frame_without_a_laser(self):
+        image = frame_under_green_light()
+        image[:, :, 2] = 70
+
+        detection = make_detector(method="red_channel").detect(image)
+
+        assert not detection.accepted
+
+    def test_reports_its_method(self):
+        detection = make_detector(method="red_channel").detect(frame_under_green_light())
+
+        assert detection.statistics["method"] == "red_channel"
+
+
 class TestDiagnostics:
     def test_debug_images_are_full_frame(self):
         image = frame_with_stripe()
@@ -275,3 +351,19 @@ class TestConfigurationValidation:
 
         with pytest.raises(Exception):
             config.validate()
+
+    def test_rejects_an_unknown_method(self):
+        config = DetectorConfig()
+        config.method = "infrared"
+
+        with pytest.raises(Exception):
+            config.validate()
+
+    def test_rejects_a_red_peak_ratio_out_of_range(self):
+        for value in (0.1, 1.5):
+            config = DetectorConfig()
+            config.method = "red_channel"
+            config.red_peak_ratio = value
+
+            with pytest.raises(Exception):
+                config.validate()

@@ -7,6 +7,14 @@ Two detection methods are provided:
     the end of OpenCV's 0-179 hue scale (0-10 and 170-179).  This is the method
     that works with a permanently powered laser and it is the default.
 
+``red_channel``
+    Use the red channel alone.  Made for a scanner lit with green (or blue)
+    light: everything except the laser is dark in red, while a red laser on
+    white paper saturates to *white* - no longer "red" for a hue test - but
+    still peaks at 255 in the red channel.  Only the top of each scan line's
+    peak is kept, so the laser's glow into the surface cannot bias the centre.
+    Unsuitable under white light, where white surfaces are bright in red too.
+
 ``difference``
     Subtract a laser-off frame from a laser-on frame.  Ambient light cancels
     out, so this is dramatically more robust - but it needs a laser that the
@@ -138,6 +146,25 @@ class LaserLineDetector:
         response = hsv[:, :, 2]
 
         return mask, response
+
+    def _red_channel_mask(self, frame_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Return ``(mask, response)`` for the red-channel method."""
+
+        config = self.config
+
+        red = frame_bgr[:, :, 2]
+
+        if config.blur_kernel >= 3:
+            red = cv2.GaussianBlur(red, (config.blur_kernel, config.blur_kernel), 0)
+
+        # Peak of every scan line: rows for a vertical line, columns otherwise.
+        axis = 1 if config.scan_axis == "rows" else 0
+        peak = red.max(axis=axis, keepdims=True).astype(np.float32)
+
+        threshold = np.maximum(float(config.red_min), peak * float(config.red_peak_ratio))
+        mask = (red.astype(np.float32) >= threshold).astype(np.uint8) * 255
+
+        return mask, red
 
     def _difference_mask(
         self, frame_on: np.ndarray, frame_off: np.ndarray
@@ -293,14 +320,18 @@ class LaserLineDetector:
             roi_off = frame_without_laser[roi_y : roi_y + roi_h, roi_x : roi_x + roi_w]
             mask, response = self._difference_mask(roi_frame, roi_off)
         else:
-            mask, response = self._hsv_mask(roi_frame)
+            mask, response = (
+                self._red_channel_mask(roi_frame)
+                if config.method == "red_channel"
+                else self._hsv_mask(roi_frame)
+            )
 
         mask = self._clean_mask(mask)
 
         mask_pixels = int(np.count_nonzero(mask))
 
         statistics: dict[str, Any] = {
-            "method": "difference" if use_difference else "hsv",
+            "method": "difference" if use_difference else config.method,
             "mask_pixels": mask_pixels,
             "roi": [roi_x, roi_y, roi_w, roi_h],
         }
