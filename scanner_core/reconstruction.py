@@ -139,6 +139,17 @@ class Reconstructor:
             self._turntable.axis_direction, dtype=np.float64
         ).reshape(3)
 
+        # The calibration may know the empty scan volume (the platform below,
+        # the box around); it can only tighten the configured limits.
+        floor = getattr(self._turntable, "scan_floor_mm", None)
+        radius = getattr(self._turntable, "scan_radius_mm", None)
+        self._min_height_mm = (
+            self.config.min_height_mm if floor is None else max(self.config.min_height_mm, floor)
+        )
+        self._max_radius_mm = (
+            self.config.max_radius_mm if radius is None else min(self.config.max_radius_mm, radius)
+        )
+
     # ------------------------------------------------------------------
     def reconstruct_frame(
         self,
@@ -225,9 +236,9 @@ class Reconstructor:
         local = camera_to_turntable(points_camera, self._axis_origin, self._axis_direction)
 
         radius = np.hypot(local[:, 0], local[:, 1])
-        within_radius = radius <= self.config.max_radius_mm
+        within_radius = radius <= self._max_radius_mm
 
-        within_height = (local[:, 2] >= self.config.min_height_mm) & (
+        within_height = (local[:, 2] >= self._min_height_mm) & (
             local[:, 2] <= self.config.max_height_mm
         )
 

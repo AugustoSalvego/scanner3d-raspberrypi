@@ -277,108 +277,83 @@
               <label for="boardSquare">Square size (mm)</label>
               <input id="boardSquare" type="number" min="1" step="0.01" value="10" />
             </div>
-            <div>
-              <label for="cameraFolder">Camera image folder</label>
-              <input id="cameraFolder" type="text" value="camera" />
-            </div>
-            <div>
-              <label for="laserFolder">Laser image folder</label>
-              <input id="laserFolder" type="text" value="laser" />
-            </div>
           </div>
 
-          <h3 style="font-size: 13px; margin: 18px 0 6px">
-            Automatic calibration (board on the turntable)
-          </h3>
-          <p class="hint" style="margin: 0 0 10px">
-            Uses the checkerboard values above: type the square size you measured
-            with a ruler. Keep the laser on and do not touch the camera between
-            steps. Each step turns the platform once and takes 36 photographs.
-          </p>
+          <h3 style="font-size: 13px; margin: 18px 0 6px">Calibrate (one turn)</h3>
+          <ol class="auto-howto">
+            <li>Stand the board upright on the platform, 2-3 cm in front of the centre pin, printed side facing the camera.</li>
+            <li>Laser on and fixed so it cannot move.</li>
+            <li>Press <strong>Calibrate</strong> and do not touch the box until it finishes (about 4 minutes).</li>
+          </ol>
 
-          <div class="auto-steps">
-            <div class="auto-step">
-              <div class="auto-step-text">
-                <strong>1. Upright</strong>
-                <span>Board standing 2-3 cm in front of the centre pin, printed side facing the camera.</span>
-              </div>
-              <div class="auto-step-actions">
-                <span class="auto-step-status" id="autoStatus1">not done</span>
-                <button class="small" id="autoStep1">Run step 1</button>
-              </div>
-            </div>
-            <div class="auto-step">
-              <div class="auto-step-text">
-                <strong>2. Leaning back</strong>
-                <span>Same place, tilted back 15-25 degrees like a picture frame, facing the camera.</span>
-              </div>
-              <div class="auto-step-actions">
-                <span class="auto-step-status" id="autoStatus2">not done</span>
-                <button class="small" id="autoStep2">Run step 2</button>
-              </div>
-            </div>
-            <div class="auto-step">
-              <div class="auto-step-text">
-                <strong>3. Leaning forward</strong>
-                <span>Same place, tilted forward 15-25 degrees, facing the camera.</span>
-              </div>
-              <div class="auto-step-actions">
-                <span class="auto-step-status" id="autoStatus3">not done</span>
-                <button class="small" id="autoStep3">Run step 3</button>
-              </div>
-            </div>
+          <div class="button-row" style="margin-top: 10px; align-items: center">
+            <button id="autoCalibrate">Calibrate</button>
+            <button class="ghost" id="autoStop">Stop</button>
           </div>
 
           <p class="note" id="autoProgress"></p>
 
-          <div class="button-row" style="margin-top: 10px">
-            <button id="autoCompute">Compute and save</button>
-            <button class="ghost" id="autoStop">Stop</button>
-            <button class="ghost" id="autoReset">Start over</button>
+          <div id="autoResult"></div>
+
+          <div class="button-row" style="margin-top: 8px">
+            <button class="ghost small" id="autoCompute" title="Compute again from the same photographs, for example after changing the laser detection">
+              Compute again
+            </button>
             <a class="button-link ghost" id="autoDownload" href="/api/calibration/auto/download" hidden>
               Download photos (zip)
             </a>
           </div>
 
-          <div id="autoResult"></div>
+          <details class="advanced">
+            <summary>Advanced: manual calibration</summary>
 
-          <h3 style="font-size: 13px; margin: 18px 0 8px">Manual calibration (image folders)</h3>
-
-          <div class="button-row" style="margin-top: 12px">
-            <button id="calibrateCamera">Calibrate camera</button>
-            <button id="calibrateLaser">Fit laser plane</button>
-          </div>
-
-          <h3 style="font-size: 13px; margin: 16px 0 8px">Turntable (manual)</h3>
-
-          <div class="field-grid">
-            <div>
-              <label for="axisOrigin">Axis origin, camera frame (x,y,z mm)</label>
-              <input id="axisOrigin" type="text" placeholder="0, 60, 320" />
+            <div class="field-grid" style="margin-top: 10px">
+              <div>
+                <label for="cameraFolder">Camera image folder</label>
+                <input id="cameraFolder" type="text" value="camera" />
+              </div>
+              <div>
+                <label for="laserFolder">Laser image folder</label>
+                <input id="laserFolder" type="text" value="laser" />
+              </div>
             </div>
-            <div>
-              <label for="axisDirection">Axis direction (x,y,z)</label>
-              <input id="axisDirection" type="text" placeholder="0, -1, 0" />
-            </div>
-            <div>
-              <label for="rotationDirection">Rotation direction</label>
-              <select id="rotationDirection">
-                <option value="1">1</option>
-                <option value="-1">-1</option>
-              </select>
-            </div>
-          </div>
 
-          <div class="button-row" style="margin-top: 12px">
-            <button class="ghost" id="saveTurntable">Save turntable calibration</button>
-          </div>
+            <div class="button-row" style="margin-top: 12px">
+              <button id="calibrateCamera">Calibrate camera</button>
+              <button id="calibrateLaser">Fit laser plane</button>
+            </div>
 
-          <p class="note">
-            Put the checkerboard photographs in
-            <code>outputs/calibration/images/&lt;folder&gt;/</code>. For a measured axis,
-            <code>python -m tools.calibrate turntable</code> estimates it from a tracked
-            target instead of by hand.
-          </p>
+            <h3 style="font-size: 13px; margin: 16px 0 8px">Turntable (manual)</h3>
+
+            <div class="field-grid">
+              <div>
+                <label for="axisOrigin">Axis origin, camera frame (x,y,z mm)</label>
+                <input id="axisOrigin" type="text" placeholder="0, 60, 320" />
+              </div>
+              <div>
+                <label for="axisDirection">Axis direction (x,y,z)</label>
+                <input id="axisDirection" type="text" placeholder="0, -1, 0" />
+              </div>
+              <div>
+                <label for="rotationDirection">Rotation direction</label>
+                <select id="rotationDirection">
+                  <option value="1">1</option>
+                  <option value="-1">-1</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="button-row" style="margin-top: 12px">
+              <button class="ghost" id="saveTurntable">Save turntable calibration</button>
+            </div>
+
+            <p class="note">
+              Put the checkerboard photographs in
+              <code>outputs/calibration/images/&lt;folder&gt;/</code>. For a measured axis,
+              <code>python -m tools.calibrate turntable</code> estimates it from a tracked
+              target instead of by hand.
+            </p>
+          </details>
         </section>
 
         <!-- --------------------------------------- laser diagnostics -->

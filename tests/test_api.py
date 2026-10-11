@@ -488,6 +488,20 @@ class TestAutomaticCalibrationEndpoints:
         assert response.status_code == 422
         assert "physical" in payload(response)["message"]
 
+    def test_one_turn_needs_physical_mode(self, client):
+        response = client.post("/api/calibration/auto/one-turn", json={})
+
+        assert response.status_code == 422
+        assert "physical" in payload(response)["message"]
+
+    def test_one_turn_rejects_invalid_board_values(self, client):
+        response = client.post(
+            "/api/calibration/auto/one-turn",
+            json={"checkerboard": {"columns": 6, "rows": 6, "square_size_mm": 10}},
+        )
+
+        assert response.status_code == 422
+
     def test_unknown_step(self, client):
         response = client.post("/api/calibration/auto/step/7", json={})
 

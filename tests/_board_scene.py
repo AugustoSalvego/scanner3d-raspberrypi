@@ -52,6 +52,17 @@ class BoardTurntableScene:
     noise: float = 2.0
     seed: int = 7
     texture_px_per_mm: float = 8.0
+    #: Render the platform (the disc the board stands on, height 0) and the
+    #: back wall of the box, both lit by the laser where the board does not
+    #: shadow them - what the real camera sees around the board.
+    surroundings: bool = False
+    platform_radius_mm: float = 75.0
+    #: The back wall is the plane ``x = wall_x_mm``, behind the axis.
+    wall_x_mm: float = 100.0
+    #: Height of the laser module above the platform. Only its shadows depend
+    #: on it: mounted high, as on the real scanner, it reaches the wall above
+    #: the board for most of a turn.
+    laser_height_mm: float = 140.0
     _rng: np.random.Generator = field(init=False, repr=False)
     _remap: tuple[np.ndarray, np.ndarray] | None = field(default=None, init=False, repr=False)
 
@@ -81,7 +92,9 @@ class BoardTurntableScene:
 
         a = np.radians(self.laser_angle_deg)
         self.laser_normal_w = np.array([-np.sin(a), np.cos(a), 0.0])
-        self.laser_source_w = -170.0 * np.array([np.cos(a), np.sin(a), 0.0])
+        self.laser_source_w = -170.0 * np.array([np.cos(a), np.sin(a), 0.0]) + np.array(
+            [0.0, 0.0, self.laser_height_mm]
+        )
 
     # ------------------------------------------------------------------
     # Ground truth in camera coordinates
@@ -95,6 +108,14 @@ class BoardTurntableScene:
         """The rotation axis, pointing up."""
 
         return self.R_wc @ self.axis_w
+
+    @property
+    def wall_radius_mm(self) -> float:
+        """Distance from the axis to where the laser sheet meets the back wall."""
+
+        a = np.radians(self.laser_angle_deg)
+
+        return float(self.wall_x_mm / np.cos(a))
 
     @property
     def laser_plane_camera(self) -> tuple[np.ndarray, float]:
@@ -203,10 +224,98 @@ class BoardTurntableScene:
 
         return self._remap
 
+    def _surroundings(self, R: np.ndarray, t: np.ndarray, laser: bool) -> np.ndarray:
+        """Platform and back wall in the undistorted image, laser and board shadow included."""
+
+        image = np.full((self.height, self.width, 3), 18.0)
+
+        xs, ys = np.meshgrid(np.arange(self.width) + 0.0, np.arange(self.height) + 0.0)
+        rays_c = np.stack(
+            [
+                (xs - self.camera_matrix[0, 2]) / self.focal_px,
+                (ys - self.camera_matrix[1, 2]) / self.focal_px,
+                np.ones_like(xs),
+            ],
+            axis=-1,
+        )
+        rays_w = rays_c @ self.R_wc  # each row times R_wc = R_wc.T @ ray
+        C = self.C_w
+
+        best = np.full(xs.shape, np.inf)
+        points = np.zeros(xs.shape + (3,))
+        surface = np.zeros(xs.shape, dtype=int)  # 0 none, 1 platform, 2 wall
+
+        # Platform: the plane through the origin perpendicular to the axis.
+        up = self.axis_w
+        denominator = rays_w @ up
+        with np.errstate(divide="ignore", invalid="ignore"):
+            depth = -(C @ up) / denominator
+        hit = C + depth[..., None] * rays_w
+        on = (depth > 0) & (np.linalg.norm(hit - (hit @ up)[..., None] * up, axis=-1) <= self.platform_radius_mm)
+        closer = on & (depth < best)
+        best[closer], points[closer], surface[closer] = depth[closer], hit[closer], 1
+
+        # Back wall.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            depth = (self.wall_x_mm - C[0]) / rays_w[..., 0]
+        hit = C + depth[..., None] * rays_w
+        on = (depth > 0) & (np.abs(hit[..., 1]) <= 160.0) & (hit[..., 2] >= -40.0) & (hit[..., 2] <= 220.0)
+        closer = on & (depth < best)
+        best[closer], points[closer], surface[closer] = depth[closer], hit[closer], 2
+
+        image[surface == 1] = 95.0
+        image[surface == 2] = 70.0
+
+        if not laser:
+            return image
+
+        normal = self.laser_normal_w
+        lit = surface > 0
+        target = points[lit]
+        distance = np.abs(target @ normal - self.laser_offset_mm)
+
+        # Width across the line, measured on the surface.
+        surface_normal = np.where((surface[lit] == 1)[:, None], up, np.array([-1.0, 0.0, 0.0]))
+        stretch = np.sqrt(np.maximum(1e-6, 1.0 - (surface_normal @ normal) ** 2))
+        profile = np.exp(-0.5 * (distance * stretch / 0.45) ** 2)
+
+        # The board casts a shadow: no laser behind it.
+        source = self.laser_source_w
+        R_w = self.R_wc.T @ R
+        t_w = self.R_wc.T @ t + self.C_w
+        board_normal = R_w[:, 2]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fraction = ((t_w - source) @ board_normal) / ((target - source) @ board_normal)
+        crossing = source + fraction[:, None] * (target - source)
+        u = (crossing - t_w) @ R_w[:, 0]
+        v = (crossing - t_w) @ R_w[:, 1]
+        lo = -self.square_mm - self.margin_mm
+        shadow = (
+            (fraction > 0.0)
+            & (fraction < 1.0)
+            & (u >= lo)
+            & (u <= lo + (self.columns + 1) * self.square_mm + 2 * self.margin_mm)
+            & (v >= lo)
+            & (v <= lo + (self.rows + 1) * self.square_mm + 2 * self.margin_mm)
+        )
+        profile[shadow] = 0.0
+
+        colour = image[lit]
+        colour[:, 2] = np.maximum(colour[:, 2], 255.0 * profile)
+        colour[:, 1] = colour[:, 1] * (1.0 - 0.65 * profile)
+        colour[:, 0] = colour[:, 0] * (1.0 - 0.6 * profile)
+        image[lit] = colour
+
+        return image
+
     def render(self, angle_deg: float, tilt_deg: float = 0.0, *, laser: bool = True) -> np.ndarray:
         R, t = self.board_pose(angle_deg, tilt_deg)
 
-        ideal = np.full((self.height, self.width, 3), 18.0)
+        ideal = (
+            self._surroundings(R, t, laser)
+            if self.surroundings
+            else np.full((self.height, self.width, 3), 18.0)
+        )
 
         laser_on_front = laser and float((self.R_wc @ (self.laser_source_w - self.C_w) - t) @ R[:, 2]) < 0.0
         front = self.board_visible(angle_deg, tilt_deg)

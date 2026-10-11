@@ -213,6 +213,27 @@ def auto_status():
     return api_success("Automatic calibration.", status)
 
 
+@blueprint.post("/api/calibration/auto/one-turn")
+def auto_one_turn():
+    """The whole calibration from one button: board upright, one turn, saved."""
+
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        spec = _spec_from_payload(payload)
+    except (TypeError, ValueError) as error:
+        return error_from_exception(CalibrationError(f"Invalid checkerboard values: {error}"))
+    except CalibrationError as error:
+        return error_from_exception(error)
+
+    try:
+        scan_controller.start_one_turn_calibration(spec)
+    except Exception as error:  # noqa: BLE001 - translated for the client
+        return error_from_exception(error)
+
+    return api_success("Calibration started.", scan_controller.auto_calibration_status(), 202)
+
+
 @blueprint.post("/api/calibration/auto/step/<int:step>")
 def auto_step(step: int):
     """Turn the platform once and photograph the board for one placement."""

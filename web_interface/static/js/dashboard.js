@@ -328,8 +328,8 @@
       note.textContent = "Calibration is complete. Physical scanning is unlocked.";
     } else {
       note.textContent =
-        "Physical scanning stays blocked until all three calibrations are valid. " +
-        "See docs/automatic-calibration.md for the step by step procedure.";
+        "Physical scanning stays blocked until the scanner is calibrated: " +
+        "follow the three lines under Calibrate (one turn).";
     }
 
     const issues = $("calibrationIssues");
@@ -380,12 +380,9 @@
 
     const run = (state.auto && state.auto.run) || {};
 
-    [1, 2, 3].forEach((number) => {
-      $("autoStep" + number).disabled = running || state.busy || !physical;
-    });
-
+    $("autoCalibrate").disabled = running || state.busy || !physical;
     $("autoCompute").disabled = running || state.busy || !(run.steps_complete > 0);
-    $("autoReset").disabled = running || state.busy || !run.exists;
+    $("autoCompute").hidden = !(run.steps_complete > 0);
     $("autoDownload").hidden = !run.exists || calibrating;
     $("autoStop").disabled = !calibrating;
 
@@ -1154,10 +1151,19 @@
       if (state.autoWatching && !progress.running) {
         state.autoWatching = false;
 
+        // A saved calibration unlocks scanning: show it now, not at the next poll.
+        refreshStatus();
+
         if (progress.error) {
           toast(progress.message + " " + progress.error, "error");
         } else if (progress.message) {
-          toast(progress.message, /cancelled/.test(progress.message) ? "warning" : "success");
+          const kind = /cancelled/.test(progress.message)
+            ? "warning"
+            : /not saved/.test(progress.message)
+              ? "error"
+              : "success";
+
+          toast(progress.message, kind);
         }
       }
     } catch (error) {
@@ -1173,43 +1179,21 @@
 
   function renderAutoCalibration(data) {
     const run = data.run || {};
-    const steps = run.steps || {};
     const progress = data.progress || {};
-
-    [1, 2, 3].forEach((number) => {
-      const element = $("autoStatus" + number);
-      const step = steps[String(number)] || { status: "pending" };
-
-      let label = "not done";
-      let kind = "";
-
-      if (progress.running && progress.step === number) {
-        label = "photo " + progress.done + "/" + progress.total + ", board in " + progress.board_found;
-        kind = "running";
-      } else if (step.status === "complete") {
-        label = "done: board in " + step.board_found + " of " + step.photos;
-        kind = step.board_found >= 4 ? "done" : "bad";
-      } else if (step.status === "cancelled" || step.status === "failed") {
-        label = step.status;
-        kind = "bad";
-      } else if (step.status === "running") {
-        label = "interrupted";
-        kind = "bad";
-      }
-
-      element.textContent = label;
-      element.className = "auto-step-status " + kind;
-    });
-
     const lines = [];
 
     if (state.status && state.status.mode !== "physical") {
-      lines.push("Switch to physical mode to run the steps.");
-    } else if (state.status && !run.exists && !progress.running) {
-      lines.push("Place the board for step 1, then press Run step 1.");
+      lines.push("Switch to physical mode (Scan Configuration) to calibrate.");
     }
 
-    if (progress.message) {
+    if (progress.running && progress.computing) {
+      lines.push("Computing the calibration...");
+    } else if (progress.running) {
+      lines.push(
+        "Turning: photo " + progress.done + " of " + progress.total +
+          ", board seen in " + progress.board_found + "."
+      );
+    } else if (progress.message) {
       lines.push(progress.message);
     }
 
@@ -1217,17 +1201,11 @@
       lines.push("Error: " + progress.error);
     }
 
-    if (!progress.running && run.exists) {
-      lines.push(
-        run.steps_complete + " of 3 steps done" + (run.ready_to_compute ? " - ready to compute." : ".")
-      );
-    }
-
     text("autoProgress", lines.join("  "));
 
     $("autoProgress").style.color = progress.error ? "var(--danger)" : "";
 
-    renderAutoResult(run.result, data.diagnostics_urls || []);
+    renderAutoResult(progress.running ? null : run.result, data.diagnostics_urls || []);
   }
 
   function renderAutoResult(result, urls) {
@@ -1270,11 +1248,34 @@
     }
 
     if (turntable) {
+      const placements = (turntable.per_step || []).length;
+
       line(
-        "Turntable: the placements agree within " + fixed(turntable.axis_disagreement_deg, 2) +
-          " deg and " + fixed(turntable.axis_spread_mm, 2) + " mm, fit error " +
-          fixed(turntable.rms_mm, 3) + " mm" + (turntable.quality ? " (" + turntable.quality + ")" : "")
+        "Turntable: " +
+          (placements > 1
+            ? "the placements agree within " + fixed(turntable.axis_disagreement_deg, 2) +
+              " deg and " + fixed(turntable.axis_spread_mm, 2) + " mm, "
+            : "") +
+          "fit error " + fixed(turntable.rms_mm, 3) + " mm" +
+          (turntable.quality ? " (" + turntable.quality + ")" : "")
       );
+    }
+
+    const volume = turntable && turntable.scan_volume;
+
+    if (volume && (volume.platform_found || volume.radius_mm !== null)) {
+      const parts = [];
+
+      if (volume.radius_mm !== null && volume.radius_mm !== undefined) {
+        parts.push("objects up to " + fixed(volume.radius_mm, 0) + " mm from the centre (box at " +
+          fixed(volume.box_mm, 0) + " mm)");
+      }
+
+      if (volume.platform_found) {
+        parts.push("the first " + fixed(volume.floor_mm, 1) + " mm above the platform are left out (platform)");
+      }
+
+      line("Scan volume: " + parts.join("; "));
     }
 
     if (laser) {
@@ -1336,17 +1337,15 @@
     container.appendChild(box);
   }
 
-  function startAutoStep(number) {
-    return action(async () => {
-      await postJson("/api/calibration/auto/step/" + number, boardPayload());
+  const startCalibration = action(async () => {
+    await postJson("/api/calibration/auto/one-turn", boardPayload());
 
-      state.autoWatching = true;
+    state.autoWatching = true;
 
-      toast("Step " + number + " started: the platform turns once.", "info");
+    toast("Calibration started: the platform turns once. Do not touch the box.", "info");
 
-      await refreshAutoCalibration();
-    });
-  }
+    await refreshAutoCalibration();
+  });
 
   const stopAuto = action(async () => {
     await postJson("/api/calibration/auto/stop");
@@ -1370,25 +1369,13 @@
       body = {};
     }
 
-    await refreshAutoCalibration();
+    await Promise.all([refreshAutoCalibration(), refreshStatus()]);
 
     if (response.ok && body.success) {
       toast("Calibration saved.", "success");
     } else {
       toast(body.message || "The calibration could not be computed.", "error");
     }
-  });
-
-  const resetAuto = action(async () => {
-    if (!window.confirm("Delete the photographs of all three steps and start over?")) {
-      return;
-    }
-
-    await postJson("/api/calibration/auto/reset");
-
-    toast("Automatic calibration cleared.", "info");
-
-    await refreshAutoCalibration();
   });
 
   // ------------------------------------------------------------------- init
@@ -1405,12 +1392,9 @@
     $("calibrateCamera").addEventListener("click", calibrateCamera);
     $("calibrateLaser").addEventListener("click", calibrateLaser);
     $("saveTurntable").addEventListener("click", saveTurntable);
-    $("autoStep1").addEventListener("click", startAutoStep(1));
-    $("autoStep2").addEventListener("click", startAutoStep(2));
-    $("autoStep3").addEventListener("click", startAutoStep(3));
+    $("autoCalibrate").addEventListener("click", startCalibration);
     $("autoStop").addEventListener("click", stopAuto);
     $("autoCompute").addEventListener("click", computeAuto);
-    $("autoReset").addEventListener("click", resetAuto);
     $("refreshAll").addEventListener("click", () => {
       refreshSessions();
       refreshClouds();

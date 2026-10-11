@@ -147,6 +147,50 @@ class TestGroundTruthAccuracy:
         assert accounted == statistics["laser_pixels"]
 
 
+class TestScanVolumeFromCalibration:
+    """The automatic calibration learns where the platform and the box are."""
+
+    @staticmethod
+    def _reconstruct(floor_mm, radius_mm):
+        config = SimulationConfig(shape="cylinder", shape_radius_mm=40.0, shape_height_mm=80.0)
+        config.validate()
+
+        scene = SyntheticScene(config)
+        bundle = scene.build_calibration_bundle()
+        bundle.turntable.scan_floor_mm = floor_mm
+        bundle.turntable.scan_radius_mm = radius_mm
+
+        detector_config = DetectorConfig()
+        detector_config.min_points = 10
+        detector_config.validate()
+
+        reconstructor = Reconstructor(
+            bundle,
+            LaserLineDetector(detector_config),
+            ReconstructionConfig(),  # the wide defaults: -50 mm, 250 mm
+            FilterConfig(voxel_size_mm=0.0, statistical_outlier_enabled=False),
+            allow_synthetic_calibration=True,
+        )
+
+        return reconstructor.reconstruct(capture_scene(scene, 16))
+
+    def test_points_below_the_floor_are_dropped(self):
+        result = self._reconstruct(floor_mm=20.0, radius_mm=None)
+        points = result.cloud.points
+
+        assert result.point_count > 300
+        assert float(points[:, 2].min()) >= 20.0
+
+    def test_the_object_inside_the_radius_is_kept(self):
+        points = self._reconstruct(floor_mm=None, radius_mm=45.0).cloud.points
+
+        assert np.isclose(float(np.median(np.hypot(points[:, 0], points[:, 1]))), 40.0, atol=0.3)
+
+    def test_everything_outside_the_radius_is_the_box(self):
+        with pytest.raises(ReconstructionError):
+            self._reconstruct(floor_mm=None, radius_mm=30.0)
+
+
 class TestFilteringInPipeline:
     def test_voxel_downsampling_reduces_the_cloud(self, scene):
         dense = build_reconstructor(scene).reconstruct(capture_scene(scene, 16))

@@ -400,10 +400,11 @@ Expected future behavior:
 The scanner needs three calibrations before a physical scan: lens, turntable
 axis and laser plane.
 
-The recommended way is the **automatic calibration** in the dashboard: the
-checkerboard stands on the turntable in three placements (upright, leaning
-back, leaning forward), the platform turns once per placement and the
-software computes and saves all three calibrations. See:
+The recommended way is the **automatic calibration** in the dashboard: stand
+the checkerboard upright on the platform and press **Calibrate**. The platform
+turns once and the software computes and saves all three calibrations, plus
+the scan volume (where the platform and the box are, so they are left out of
+scans). See:
 
 ```text
 docs/automatic-calibration.md

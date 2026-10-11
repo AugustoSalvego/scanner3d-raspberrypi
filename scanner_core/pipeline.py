@@ -123,6 +123,7 @@ class ScanController:
             "done": 0,
             "total": 0,
             "board_found": 0,
+            "computing": False,
             "message": None,
             "error": None,
         }
@@ -688,8 +689,29 @@ class ScanController:
 
         return {"progress": progress, "run": run}
 
-    def start_auto_calibration_step(self, step: int, spec: CheckerboardSpec) -> None:
-        """Turn the platform once and photograph the board, in the background."""
+    def start_one_turn_calibration(self, spec: CheckerboardSpec) -> None:
+        """The whole calibration from one button: board upright, one turn.
+
+        Forgets the photographs of any earlier run, turns the platform once
+        photographing the board, then computes and (if everything passes)
+        saves lens, turntable axis and laser plane, all in the background.
+        """
+
+        self.start_auto_calibration_step(1, spec, fresh=True, compute_after=True)
+
+    def start_auto_calibration_step(
+        self,
+        step: int,
+        spec: CheckerboardSpec,
+        *,
+        fresh: bool = False,
+        compute_after: bool = False,
+    ) -> None:
+        """Turn the platform once and photograph the board, in the background.
+
+        ``fresh`` deletes the photographs of earlier steps first;
+        ``compute_after`` computes and saves the calibration when the turn ends.
+        """
 
         if step not in AUTO_CALIBRATION_STEPS:
             raise CalibrationError(f"Unknown calibration step {step}; use 1, 2 or 3.")
@@ -711,6 +733,9 @@ class ScanController:
 
             hardware = self._ensure_hardware(config)
 
+            if fresh:
+                reset_run(self.auto_calibration_directory)
+
             self._cancel_event.clear()
             self._update_auto_progress(
                 running=True,
@@ -718,7 +743,8 @@ class ScanController:
                 done=0,
                 total=self.auto_calibration_stops,
                 board_found=0,
-                message=f"Step {step} running.",
+                computing=False,
+                message="Turning the platform." if compute_after else f"Step {step} running.",
                 error=None,
             )
         except BaseException:
@@ -727,7 +753,7 @@ class ScanController:
 
         threading.Thread(
             target=self._run_auto_step_locked,
-            args=(config, hardware, step, spec),
+            args=(config, hardware, step, spec, compute_after),
             name=f"auto-calibration-step-{step}",
             daemon=True,
         ).start()
@@ -738,6 +764,7 @@ class ScanController:
         hardware: HardwareSet,
         step: int,
         spec: CheckerboardSpec,
+        compute_after: bool = False,
     ) -> None:
         """Body of a calibration step.  The scan mutex is held on entry."""
 
@@ -765,6 +792,16 @@ class ScanController:
             logger.info(message)
             self._update_auto_progress(message=message, error=None)
 
+            if compute_after:
+                self._release_motor(hardware)
+                self._update_auto_progress(computing=True, message="Computing the calibration.")
+                report = self._compute_auto_calibration_locked(config)
+                self._update_auto_progress(
+                    message="Calibration saved."
+                    if report.saved
+                    else "Calibration not saved; see the report below."
+                )
+
         except ScanCancelled:
             logger.warning(f"Automatic calibration step {step} cancelled.")
             self._update_auto_progress(message=f"Step {step} cancelled.", error=None)
@@ -782,15 +819,18 @@ class ScanController:
             )
 
         finally:
-            for close in (hardware.motor.release, hardware.motor.close):
-                try:
-                    close()
-                except Exception:  # noqa: BLE001 - best effort
-                    pass
-
-            self._update_auto_progress(running=False)
+            self._release_motor(hardware)
+            self._update_auto_progress(running=False, computing=False)
             self._cancel_event.clear()
             self._scan_mutex.release()
+
+    @staticmethod
+    def _release_motor(hardware: HardwareSet) -> None:
+        for close in (hardware.motor.release, hardware.motor.close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - best effort
+                pass
 
     def compute_auto_calibration(self) -> AutoCalibrationReport:
         """Compute and, if everything passes, save the calibration."""
@@ -799,16 +839,19 @@ class ScanController:
             raise ScanAlreadyRunning("Wait for the running scan or calibration step to finish.")
 
         try:
-            config = self._config_store.get()
-
-            report = compute_auto_calibration(
-                self.auto_calibration_directory,
-                LaserLineDetector(config.detector),
-                store=self._calibration,
-                diagnostics_dir=paths.DIAGNOSTICS_DIR / AUTO_CALIBRATION_DIAGNOSTICS,
-            )
+            return self._compute_auto_calibration_locked(self._config_store.get())
         finally:
             self._scan_mutex.release()
+
+    def _compute_auto_calibration_locked(self, config: ScannerConfig) -> AutoCalibrationReport:
+        """Compute from the stored photographs.  The scan mutex is held on entry."""
+
+        report = compute_auto_calibration(
+            self.auto_calibration_directory,
+            LaserLineDetector(config.detector),
+            store=self._calibration,
+            diagnostics_dir=paths.DIAGNOSTICS_DIR / AUTO_CALIBRATION_DIAGNOSTICS,
+        )
 
         if report.saved:
             logger.info("Automatic calibration saved (lens, turntable and laser plane).")

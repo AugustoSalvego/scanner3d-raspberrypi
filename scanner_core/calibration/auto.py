@@ -55,6 +55,7 @@ from scanner_core.calibration.turntable import (
 )
 from scanner_core.errors import CalibrationError, CameraError, ScanCancelled
 from scanner_core.geometry import (
+    camera_to_turntable,
     fit_plane,
     intersect_rays_with_plane,
     normalize,
@@ -101,6 +102,32 @@ MAX_AXIS_SPREAD_MM = 1.5
 MAX_LASER_SHIFT_MM = 1.0
 #: Fewer laser photographs than this in a step make its shift too noisy to judge.
 MIN_LASER_VIEWS_FOR_SHIFT = 3
+#: The laser points must spread across the plane, not only along one line, for
+#: its direction to be known: second-largest over largest spread.
+MIN_PLANE_SPREAD_RATIO = 0.05
+#: The laser line in the closing photograph may sit at most this many pixels
+#: from where it was in the first one. Detection repeats to a few tenths of a
+#: pixel on an unchanged scene.
+MAX_LASER_DRIFT_PX = 2.0
+#: Rows of laser line both photographs must share for the comparison.
+MIN_DRIFT_ROWS = 20
+
+#: Learning the empty scan volume (see ``_learn_scan_volume``).
+#: A scan line is "static" - the laser on the box, not on anything turning -
+#: when at least this share of a turn's photographs puts the line there.
+STATIC_SHARE = 0.6
+STATIC_TOLERANCE_PX = 1.5
+#: Static points nearer the axis than this are not taken for the box (the
+#: centre pin, say); a scan volume smaller than this is not offered.
+MIN_SCAN_RADIUS_MM = 30.0
+#: Keep this far inside the nearest part of the box.
+SCAN_RADIUS_MARGIN_MM = 5.0
+#: The platform shows as a band of laser points this many times denser, per
+#: millimetre of height, than the board around it.
+PLATFORM_PEAK_FACTOR = 3.0
+PLATFORM_BAND_FACTOR = 2.0
+#: Keep this far above the top of the platform band.
+FLOOR_MARGIN_MM = 1.0
 
 JPEG_QUALITY = 95
 
@@ -353,9 +380,21 @@ def capture_step(
                     }
                 )
 
-        # Finish the revolution so the board faces the camera again.
+        # Finish the revolution so the board faces the camera again, and
+        # photograph it there. It is the same view as the first photograph, so
+        # a laser line that is not where it was means something moved during
+        # the turn - the one check that needs no calibration at all.
         if not cancelled():
             motor.move_to(steps_per_revolution, should_cancel=should_cancel)
+            wait(settle_delay)
+
+            frame = camera.capture(flush_frames=flush_frames)
+            relative = f"step{step}/closing.jpg"
+
+            if frame is not None and cv2.imwrite(
+                str(directory / relative), frame, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
+            ):
+                record["closing"] = {"file": relative, "motor_position": int(motor.position)}
 
         record["status"] = "complete"
 
@@ -601,6 +640,138 @@ def _laser_points_on_board(
     return points[valid], pixels[valid], detection.point_count
 
 
+def _learn_scan_volume(
+    directory: Path,
+    run: dict[str, Any],
+    steps: list[int],
+    camera: Any,
+    laser: Any,
+    turntable: Any,
+    detector: LaserLineDetector,
+) -> dict[str, Any]:
+    """Where the platform and the box are, from the calibration photographs.
+
+    Every photograph of a turn is triangulated with the new calibration. The
+    laser on the box does not move while the platform turns: scan lines where
+    most photographs agree are the box, and the nearest of them bounds the scan
+    radius. The platform is the lowest dense band of points: the laser lies on
+    it in every photograph, at the same height. Heights are returned relative
+    to the turntable origin (the board centre's height).
+
+    Returns ``platform_mm`` (height of the platform), ``floor_mm`` (lowest
+    height that is not the platform, relative to the platform), ``box_mm``
+    (distance from the axis to the nearest part of the box) and ``radius_mm``
+    (the scan radius) - each ``None`` when it could not be found.
+    """
+
+    origin = np.asarray(turntable.axis_origin, dtype=np.float64).reshape(3)
+    direction = np.asarray(turntable.axis_direction, dtype=np.float64).reshape(3)
+    along, across = (1, 0) if detector.config.scan_axis == "rows" else (0, 1)
+
+    def to_turntable(pixels: np.ndarray) -> np.ndarray:
+        if len(pixels) == 0:
+            return np.zeros((0, 3))
+
+        rays = pixels_to_camera_rays(
+            pixels, camera.camera_matrix, camera.distortion_coefficients, undistort=True
+        )
+        points, valid = intersect_rays_with_plane(
+            rays, laser.plane, min_incidence=0.02, min_depth_mm=1.0, max_depth_mm=100_000.0
+        )
+
+        return camera_to_turntable(points[valid], origin, direction)
+
+    every: list[np.ndarray] = []
+    static: list[np.ndarray] = []
+
+    for number in steps:
+        frames = run["steps"][str(number)]["frames"]
+        lines: list[dict[int, float]] = []
+
+        for frame in frames:
+            image = cv2.imread(str(directory / frame["file"]), cv2.IMREAD_COLOR)
+            detection = detector.detect(image) if image is not None else None
+
+            if detection is None or not detection.accepted:
+                lines.append({})
+                continue
+
+            every.append(to_turntable(detection.pixels))
+            lines.append(
+                {int(round(point[along])): float(point[across]) for point in detection.pixels}
+            )
+
+        needed = STATIC_SHARE * len(frames)
+        found: list[tuple[float, float]] = []
+
+        for key in sorted(set().union(*lines)) if lines else []:
+            seen = np.array([line[key] for line in lines if key in line])
+
+            if len(seen) < needed:
+                continue
+
+            close = np.abs(seen - np.median(seen)) <= STATIC_TOLERANCE_PX
+
+            if np.count_nonzero(close) >= needed:
+                position = float(np.median(seen[close]))
+                found.append((position, key) if along == 1 else (key, position))
+
+        if found:
+            static.append(to_turntable(np.array(found, dtype=np.float64)))
+
+    result: dict[str, Any] = {"platform_mm": None, "floor_mm": None, "box_mm": None, "radius_mm": None}
+
+    # --- the platform: a dense band of points below the board centre
+    if every:
+        height = np.vstack(every)[:, 2]
+        values = height[height < 0.0]
+
+        if len(values) >= 50:
+            edges = np.arange(np.floor(values.min()), 1.0, 1.0)
+
+            if len(edges) >= 3:
+                counts, edges = np.histogram(values, bins=edges)
+                typical = float(np.median(counts[counts > 0]))
+                peak = int(np.argmax(counts))
+
+                if counts[peak] >= PLATFORM_PEAK_FACTOR * max(typical, 1.0):
+                    low = high = peak
+
+                    while low > 0 and counts[low - 1] > PLATFORM_BAND_FACTOR * typical:
+                        low -= 1
+
+                    while high + 1 < len(counts) and counts[high + 1] > PLATFORM_BAND_FACTOR * typical:
+                        high += 1
+
+                    band = values[(values >= edges[low]) & (values <= edges[high + 1])]
+                    platform = float(np.median(band))
+
+                    result["platform_mm"] = platform
+                    result["floor_mm"] = float(edges[high + 1]) + FLOOR_MARGIN_MM - platform
+
+    # --- the box: the nearest static laser points above the platform (a flat
+    # platform is static too, and is not the box)
+    if static:
+        box = np.vstack(static)
+        floor = (
+            0.0
+            if result["platform_mm"] is None
+            else result["platform_mm"] + result["floor_mm"] + SCAN_RADIUS_MARGIN_MM
+        )
+        box = box[box[:, 2] > floor]
+        distance = np.hypot(box[:, 0], box[:, 1])
+        distance = distance[distance >= MIN_SCAN_RADIUS_MM]
+
+        if len(distance) >= MIN_DRIFT_ROWS:
+            nearest = float(np.percentile(distance, 5))
+            result["box_mm"] = nearest
+
+            if nearest - SCAN_RADIUS_MARGIN_MM >= MIN_SCAN_RADIUS_MM:
+                result["radius_mm"] = nearest - SCAN_RADIUS_MARGIN_MM
+
+    return result
+
+
 def _laser_shift_by_step(samples: list[LaserPoseSample], steps: list[int]) -> dict[int, float]:
     """How far, in mm along the laser normal, each step's line sits from the first step's.
 
@@ -660,6 +831,52 @@ def _laser_shift_by_step(samples: list[LaserPoseSample], steps: list[int]) -> di
     return {step: value - reference for step, value in level.items()}
 
 
+def _laser_drift_px(
+    directory: Path, record: dict[str, Any], detector: LaserLineDetector
+) -> float | None:
+    """How far the laser line moved during a turn, in pixels.
+
+    Compares the first photograph with the closing one, taken after the full
+    turn at the same platform angle: the same scene, so the line must fall on
+    the same pixels. Row by row (column by column for a horizontal line), the
+    median offset is returned. ``None`` when the step has no closing photograph
+    (runs captured before it existed) or the line is not found in both.
+    """
+
+    closing = record.get("closing")
+    first = next((frame for frame in record.get("frames", []) if frame.get("index") == 0), None)
+
+    if not closing or first is None:
+        return None
+
+    lines = []
+
+    for name in (first["file"], closing["file"]):
+        image = cv2.imread(str(directory / name), cv2.IMREAD_COLOR)
+
+        if image is None:
+            return None
+
+        detection = detector.detect(image)
+
+        if not detection.accepted:
+            return None
+
+        # The detector reports one point per scan line: (u, row) for a
+        # vertical line, (column, v) for a horizontal one.
+        along, across = (1, 0) if detector.config.scan_axis == "rows" else (0, 1)
+        lines.append(
+            {int(round(point[along])): float(point[across]) for point in detection.pixels}
+        )
+
+    shared = sorted(set(lines[0]) & set(lines[1]))
+
+    if len(shared) < MIN_DRIFT_ROWS:
+        return None
+
+    return float(np.median([lines[1][key] - lines[0][key] for key in shared]))
+
+
 def _shared_normal(clouds: dict[int, np.ndarray]) -> np.ndarray | None:
     centred = np.vstack([points - points.mean(axis=0) for points in clouds.values()])
 
@@ -671,8 +888,9 @@ def _shared_normal(clouds: dict[int, np.ndarray]) -> np.ndarray | None:
     except np.linalg.LinAlgError:
         return None
 
-    # A cloud that is only a line has no defined normal.
-    if singular[1] <= 1e-9 * max(float(singular[0]), 1.0):
+    # Points along (nearly) one line have no defined normal: the plane could
+    # turn about that line.
+    if singular[1] <= MIN_PLANE_SPREAD_RATIO * float(singular[0]):
         return None
 
     return vt[-1]
@@ -720,10 +938,14 @@ def compute_auto_calibration(
         number for number in STEPS if run["steps"].get(str(number), {}).get("status") == "complete"
     ]
 
-    if len(complete) < len(STEPS):
-        missing = [str(number) for number in STEPS if number not in complete]
+    # A step that was never started is simply not part of this run (the
+    # one-turn calibration only uses step 1); one that was started and did not
+    # finish is worth a warning.
+    unfinished = [str(number) for number in STEPS if str(number) in run["steps"] and number not in complete]
+
+    if unfinished:
         report.warnings.append(
-            f"Step(s) {', '.join(missing)} not complete; computing from step(s) "
+            f"Step(s) {', '.join(unfinished)} did not finish; computing from step(s) "
             f"{', '.join(map(str, complete)) or 'none'} only."
         )
 
@@ -881,6 +1103,13 @@ def compute_auto_calibration(
     laser_profile = None
     outliers = 0
     shifts = _laser_shift_by_step(samples, sample_steps)
+    drift: dict[int, float] = {}
+
+    for number in complete:
+        value = _laser_drift_px(directory, run["steps"][str(number)], detector)
+
+        if value is not None:
+            drift[number] = value
 
     if len(samples) >= 2:
         everything = np.vstack([sample.points_camera for sample in samples])
@@ -909,8 +1138,10 @@ def compute_auto_calibration(
         "points": int(sum(len(sample.points_camera) for sample in samples)),
         "outliers_removed": outliers,
         "shift_by_step_mm": {str(step): round(value, 2) for step, value in shifts.items()},
+        "drift_during_turn_px": {str(step): round(value, 2) for step, value in drift.items()},
     }
     moved = len(shifts) > 1 and (max(shifts.values()) - min(shifts.values())) > MAX_LASER_SHIFT_MM
+    drifting = {step: value for step, value in drift.items() if abs(value) > MAX_LASER_DRIFT_PX}
 
     if moved:
         listing = ", ".join(f"step {step}: {value:+.1f} mm" for step, value in shifts.items())
@@ -918,8 +1149,19 @@ def compute_auto_calibration(
             "Laser: the laser moved between the steps "
             f"({listing}, measured against step {min(shifts)}). The laser plane only "
             "exists if the laser stays still: fix the laser holder so it cannot turn or "
-            "slide, do not touch the box during the steps, then run the three steps again."
+            "slide, do not touch the box, then calibrate again."
         )
+
+    for step, value in drifting.items():
+        report.issues.append(
+            f"Laser: the laser moved during the turn of step {step}: in the last "
+            "photograph, taken where the first one was, the line is "
+            f"{value:+.1f} px away from where it started. The laser or the board moved. "
+            "Fix the laser holder so it cannot turn or slide, check that the board "
+            "stands firmly, do not touch the box, then calibrate again."
+        )
+
+    moved = moved or bool(drifting)
 
     if len(samples) < 2:
         report.issues.append(
@@ -962,6 +1204,44 @@ def compute_auto_calibration(
 
             if _write_overlay(Path(diagnostics_dir) / name, image, view, spec, pixels):
                 report.diagnostics.append(name)
+
+    # --- scan volume: the platform and the box, from the same photographs ---
+    if laser_profile is not None and turntable_profile is not None:
+        volume = _learn_scan_volume(
+            directory, run, complete, camera, laser_profile, turntable_profile, detector
+        )
+
+        if volume["platform_mm"] is not None:
+            # Heights are measured from the platform from now on.
+            direction = np.asarray(turntable_profile.axis_direction, dtype=np.float64).reshape(3)
+            turntable_profile.axis_origin = (
+                np.asarray(turntable_profile.axis_origin, dtype=np.float64).reshape(3)
+                + volume["platform_mm"] * direction
+            )
+            turntable_profile.scan_floor_mm = round(volume["floor_mm"], 2)
+        else:
+            report.warnings.append(
+                "The platform was not found in the photographs, so it will not be "
+                "removed from scans; heights are measured from the board centre."
+            )
+
+        if volume["radius_mm"] is not None:
+            turntable_profile.scan_radius_mm = round(volume["radius_mm"], 1)
+        else:
+            report.warnings.append(
+                "The box around the platform was not found in the photographs, so "
+                "the configured scan radius applies."
+            )
+
+        report.turntable["scan_volume"] = {
+            "platform_found": volume["platform_mm"] is not None,
+            "board_centre_above_platform_mm": None
+            if volume["platform_mm"] is None
+            else round(-volume["platform_mm"], 1),
+            "floor_mm": turntable_profile.scan_floor_mm,
+            "box_mm": None if volume["box_mm"] is None else round(volume["box_mm"], 1),
+            "radius_mm": turntable_profile.scan_radius_mm,
+        }
 
     # --- save, all or nothing ----------------------------------------------
     if store is not None and laser_profile is not None and turntable_profile is not None:

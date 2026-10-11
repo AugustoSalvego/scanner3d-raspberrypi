@@ -349,6 +349,14 @@ class TurntableCalibration(CalibrationProfile):
     rms_mm: float = float("inf")
     observation_count: int = 0
     method: str = "manual"
+    #: The empty scan volume, learnt by the automatic calibration from the
+    #: laser on the platform and on the box behind it. ``None`` = not known;
+    #: the reconstruction then uses its configured limits alone.
+    #: Points closer to the platform than this (heights are measured from the
+    #: platform when it was found) are the platform itself.
+    scan_floor_mm: float | None = None
+    #: Points further from the axis than this are the box, not the object.
+    scan_radius_mm: float | None = None
 
     def validate(self) -> list[str]:
         issues: list[str] = []
@@ -388,6 +396,14 @@ class TurntableCalibration(CalibrationProfile):
             if not np.isfinite(self.rms_mm) or self.rms_mm > 2.0:
                 issues.append("Axis fit RMS is missing or above 2 mm.")
 
+        if self.scan_floor_mm is not None and not np.isfinite(self.scan_floor_mm):
+            issues.append("scan_floor_mm must be a finite number.")
+
+        if self.scan_radius_mm is not None and not (
+            np.isfinite(self.scan_radius_mm) and self.scan_radius_mm > 0
+        ):
+            issues.append("scan_radius_mm must be a positive number.")
+
         self.issues = issues
 
         return issues
@@ -415,6 +431,8 @@ class TurntableCalibration(CalibrationProfile):
                 "rms_mm": float(self.rms_mm),
                 "observation_count": int(self.observation_count),
                 "method": self.method,
+                "scan_floor_mm": None if self.scan_floor_mm is None else float(self.scan_floor_mm),
+                "scan_radius_mm": None if self.scan_radius_mm is None else float(self.scan_radius_mm),
                 "quality": self.quality,
             }
         )
@@ -439,11 +457,17 @@ class TurntableCalibration(CalibrationProfile):
             rms_mm=float(data.get("rms_mm", float("inf"))),
             observation_count=int(data.get("observation_count", 0)),
             method=str(data.get("method", "manual")),
+            scan_floor_mm=_optional_float(data.get("scan_floor_mm")),
+            scan_radius_mm=_optional_float(data.get("scan_radius_mm")),
         )
 
         profile.validate()
 
         return profile
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
 
 
 @dataclass

@@ -164,3 +164,42 @@ class TestTrackingOnRenderedImages:
         assert np.linalg.norm(off_axis) < 1.0
         assert estimate.rotation_direction == sense
         assert estimate.rms_mm < 0.5
+
+
+class TestScanVolumeStorage:
+    def _profile(self, **extra):
+        from scanner_core.calibration.store import TurntableCalibration
+
+        return TurntableCalibration(
+            axis_origin=np.array([0.0, 10.0, 180.0]),
+            axis_direction=np.array([0.0, -1.0, 0.0]),
+            steps_per_revolution=4096,
+            rms_mm=0.1,
+            observation_count=10,
+            method="target_tracking",
+            **extra,
+        )
+
+    def test_round_trip(self):
+        from scanner_core.calibration.store import TurntableCalibration
+
+        profile = self._profile(scan_floor_mm=3.9, scan_radius_mm=82.2)
+        loaded = TurntableCalibration.from_dict(profile.to_dict())
+
+        assert loaded.valid
+        assert loaded.scan_floor_mm == pytest.approx(3.9)
+        assert loaded.scan_radius_mm == pytest.approx(82.2)
+
+    def test_files_saved_before_it_existed_still_load(self):
+        from scanner_core.calibration.store import TurntableCalibration
+
+        data = self._profile().to_dict()
+        del data["scan_floor_mm"], data["scan_radius_mm"]
+
+        loaded = TurntableCalibration.from_dict(data)
+
+        assert loaded.valid
+        assert loaded.scan_floor_mm is None and loaded.scan_radius_mm is None
+
+    def test_a_nonsense_radius_is_refused(self):
+        assert self._profile(scan_radius_mm=-5.0).validate() != []

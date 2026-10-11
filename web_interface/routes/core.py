@@ -134,6 +134,7 @@ def info():
                     "POST /api/calibration/laser",
                     "POST /api/calibration/turntable/manual",
                     "GET /api/calibration/auto",
+                    "POST /api/calibration/auto/one-turn",
                     "POST /api/calibration/auto/step/<1|2|3>",
                     "POST /api/calibration/auto/stop",
                     "POST /api/calibration/auto/compute",

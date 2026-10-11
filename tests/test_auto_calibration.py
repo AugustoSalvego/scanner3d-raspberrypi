@@ -20,6 +20,7 @@ from scanner_core.calibration.auto import (
     compute_auto_calibration,
     load_run,
     reset_run,
+    save_run,
     summarize_run,
 )
 from scanner_core.calibration.camera import CheckerboardSpec
@@ -198,7 +199,8 @@ class TestCapture:
 
         assert len(run["steps"]["1"]["frames"]) == STOPS
         assert run["steps"]["2"]["started_at"] == first_step_two
-        assert len(list((tmp_path / "step1").iterdir())) == STOPS
+        # The stops plus the closing photograph, nothing left from the first run.
+        assert len(list((tmp_path / "step1").iterdir())) == STOPS + 1
 
     def test_a_different_board_is_refused_mid_run(self, tmp_path, scene):
         camera, motor = _rig(scene)
@@ -254,6 +256,42 @@ class TestCapture:
         assert summarize_run(None)["steps"]["1"]["status"] == "pending"
 
 
+class TestClosingPhotograph:
+    def test_a_turn_ends_with_a_photograph_of_the_first_view(self, tmp_path, scene):
+        camera, motor = _rig(scene)
+
+        _capture_all(tmp_path / "run", camera, motor, steps=(1,))
+
+        record = load_run(tmp_path / "run")["steps"]["1"]
+        closing = record["closing"]
+
+        assert closing["motor_position"] == STEPS_PER_REVOLUTION
+        assert (tmp_path / "run" / closing["file"]).exists()
+
+        first = cv2.imread(str(tmp_path / "run" / record["frames"][0]["file"]), cv2.IMREAD_GRAYSCALE)
+        last = cv2.imread(str(tmp_path / "run" / closing["file"]), cv2.IMREAD_GRAYSCALE)
+
+        # Same platform angle, same scene: only image noise differs.
+        assert float(np.mean(cv2.absdiff(first, last))) < 3.0
+
+    def test_runs_without_it_are_still_computed(self, tmp_path, scene):
+        """Photographs captured before the closing photograph existed."""
+
+        camera, motor = _rig(scene)
+
+        _capture_all(tmp_path / "run", camera, motor, steps=(1,))
+
+        run = load_run(tmp_path / "run")
+        del run["steps"]["1"]["closing"]
+        save_run(tmp_path / "run", run)
+
+        report = compute_auto_calibration(tmp_path / "run", _detector())
+
+        assert report.saved is False  # no store given
+        assert report.issues == []
+        assert report.laser["drift_during_turn_px"] == {}
+
+
 class TestComputation:
     @pytest.mark.parametrize("sense", [1, -1])
     def test_recovers_the_rig_geometry(self, tmp_path, sense):
@@ -303,6 +341,105 @@ class TestComputation:
 
         # The report is kept with the run, for the dashboard.
         assert load_run(tmp_path / "run")["result"]["saved"] is True
+
+    @pytest.mark.parametrize("sense", [1, -1])
+    def test_one_upright_turn_calibrates_everything(self, tmp_path, sense):
+        """The one-button calibration: step 1 only, no tilted placements.
+
+        Measured: 0.51 mm mean / 0.76 mm max triangulation error (0.66 / 0.86
+        with the platform turning the other way), against 0.37-0.48 mm mean
+        with the three placements; at this 640x480 test resolution.
+        """
+
+        scene = BoardTurntableScene(rotation_sense=sense, surroundings=True)
+        camera, motor = _rig(scene)
+        store = CalibrationStore(directory=tmp_path / "calibration")
+
+        _capture_all(tmp_path / "run", camera, motor, steps=(1,))
+
+        report = compute_auto_calibration(tmp_path / "run", _detector(), store=store)
+
+        assert report.issues == []
+        assert report.warnings == []  # steps 2 and 3 were never started: nothing to warn about
+        assert report.saved is True
+
+        bundle = store.load_bundle()
+
+        # The scan volume, learnt from the laser on the platform and the wall.
+        # Measured: platform within 0.4-0.6 mm, wall 1.6-2.1 mm short of the
+        # truth (the laser plane is extrapolated that far), floor 2.0 mm.
+        volume = report.turntable["scan_volume"]
+        up = scene.axis_direction_camera
+        platform_error = (np.asarray(bundle.turntable.axis_origin) - scene.axis_origin_camera) @ up
+
+        assert volume["platform_found"] is True
+        assert volume["board_centre_above_platform_mm"] == pytest.approx(45.0, abs=0.5)
+        assert abs(float(platform_error)) < 1.0  # heights are now measured from the platform
+        assert 0.5 <= bundle.turntable.scan_floor_mm <= 3.0
+        assert volume["box_mm"] == pytest.approx(scene.wall_radius_mm, abs=3.0)
+        assert bundle.turntable.scan_radius_mm == pytest.approx(volume["box_mm"] - 5.0, abs=0.1)
+
+        assert bundle.camera.camera_matrix[0][0] == pytest.approx(scene.focal_px, rel=0.015)
+        assert bundle.turntable.rotation_direction == sense
+        assert abs(report.laser["drift_during_turn_px"]["1"]) < 0.5
+
+        errors = _triangulation_error_mm(scene, store)
+
+        assert float(np.mean(errors)) < 0.8
+        assert float(np.max(errors)) < 1.1
+
+    def test_without_platform_or_box_in_view_the_volume_is_left_to_the_settings(self, tmp_path, scene):
+        camera, motor = _rig(scene)  # the plain scene: board only, black around it
+        store = CalibrationStore(directory=tmp_path / "calibration")
+
+        _capture_all(tmp_path / "run", camera, motor, steps=(1,))
+
+        report = compute_auto_calibration(tmp_path / "run", _detector(), store=store)
+
+        assert report.saved is True
+        assert report.turntable["scan_volume"]["platform_found"] is False
+        assert any("platform was not found" in warning for warning in report.warnings)
+
+        turntable = store.load_bundle().turntable
+
+        assert turntable.scan_floor_mm is None and turntable.scan_radius_mm is None
+
+    def test_a_laser_that_moves_during_the_turn_is_reported(self, tmp_path, scene):
+        """Seen on the real scanner: within one turn the laser line on the back
+        wall moved by about 20 px, and that turn's plane error was 3 mm."""
+
+        camera, motor = _rig(scene)
+        store = CalibrationStore(directory=tmp_path / "calibration")
+        render = camera.read
+
+        def read_with_a_slipping_laser():
+            # The laser slips half-way round, while the board is out of view.
+            scene.laser_offset_mm = 3.0 if motor.position >= STEPS_PER_REVOLUTION / 2 else 0.0
+
+            return render()
+
+        camera.read = read_with_a_slipping_laser
+
+        _capture_all(tmp_path / "run", camera, motor, steps=(1,))
+
+        report = compute_auto_calibration(tmp_path / "run", _detector(), store=store)
+
+        assert report.saved is False
+        assert any("moved during the turn of step 1" in issue for issue in report.issues)
+        assert abs(report.laser["drift_during_turn_px"]["1"]) > 4.0
+
+    def test_an_unfinished_step_is_warned_about(self, tmp_path, scene):
+        camera, motor = _rig(scene)
+
+        _capture_all(tmp_path / "run", camera, motor, steps=(1,))
+
+        run = load_run(tmp_path / "run")
+        run["steps"]["2"] = {"status": "cancelled", "frames": []}
+        save_run(tmp_path / "run", run)
+
+        report = compute_auto_calibration(tmp_path / "run", _detector())
+
+        assert any("did not finish" in warning for warning in report.warnings)
 
     def test_without_a_visible_laser_nothing_is_saved(self, tmp_path, scene):
         camera, motor = _rig(scene)
@@ -465,6 +602,45 @@ class TestThroughTheController:
         session = controller._prepare_scan(controller._config_store.get())
 
         assert session.metadata()["calibration"]["camera"]["source"] == "auto_turntable"
+
+    def test_one_turn_calibration_from_one_call(self, tmp_path, scene):
+        """The dashboard's single Calibrate button."""
+
+        controller, camera = self._controller(tmp_path, scene)
+
+        # Photographs of an older run must not leak into the new calibration.
+        camera.tilt = TILTS[2]
+        controller.start_auto_calibration_step(2, SPEC)
+        self._wait(controller)
+
+        camera.tilt = TILTS[1]
+        controller.start_one_turn_calibration(SPEC)
+        self._wait(controller)
+
+        status = controller.auto_calibration_status()
+
+        assert status["progress"]["error"] is None
+        assert status["progress"]["computing"] is False
+        assert status["progress"]["message"] == "Calibration saved."
+        assert status["run"]["steps"]["1"]["status"] == "complete"
+        assert status["run"]["steps"]["2"]["status"] == "pending"
+        assert status["run"]["result"]["saved"] is True
+        assert not controller.is_running
+        assert controller._calibration.load_bundle().is_ready()
+
+    def test_one_turn_calibration_that_does_not_pass_says_so(self, tmp_path, scene):
+        controller, camera = self._controller(tmp_path, scene)
+        camera.laser = False
+
+        controller.start_one_turn_calibration(SPEC)
+        self._wait(controller)
+
+        status = controller.auto_calibration_status()
+
+        assert status["progress"]["error"] is None
+        assert "not saved" in status["progress"]["message"]
+        assert status["run"]["result"]["saved"] is False
+        assert not controller._calibration.load_bundle().is_ready()
 
     def test_one_thing_at_a_time_and_stop_works(self, tmp_path, scene):
         from scanner_core.errors import ScanAlreadyRunning
