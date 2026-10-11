@@ -21,4 +21,4 @@ SCANS_FOLDER = "outputs/scans"
 # Open-loop motor calibration: VERIFY true output-shaft and turntable turns.
 # 4096 is an initial estimate for a 28BYJ-48 in half-step mode, not an encoder reading.
 MOTOR_HALF_STEPS_PER_REV = 4096
-MOTOR_PHASE_DELAY = 0.003
+MOTOR_PHASE_DELAY = 0.005  # Slower rotation: 5 ms per electrical half-step
