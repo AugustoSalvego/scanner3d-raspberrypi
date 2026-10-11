@@ -34,4 +34,4 @@ jobs:
           node --check /tmp/scanner-dashboard.js
       - name: Test calibration geometry and Flask API
         run: |
-          python -m pytest tests/test_calibration_geometry.py tests/test_calibration_api.py -q
+          python -m pytest tests/test_calibration_geometry.py tests/test_calibration_api.py tests/test_real_reconstruction.py -q
