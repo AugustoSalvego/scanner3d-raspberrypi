@@ -103,6 +103,10 @@ def calibration_status():
         "board": [BOARD_COLUMNS, BOARD_ROWS],
         "stops_per_revolution": STOPS,
         "stages": completed,
+        "preflight_preview_url": (
+            "/api/calibration/workflow/preflight-preview"
+            if (RUN_DIR / "diagnostics" / "preflight.jpg").is_file() else None
+        ),
         "profiles": profiles,
     }
 
@@ -295,8 +299,17 @@ def _compute_worker(kind):
             axis = compute_axis(by_placement, square, camera)
             axis["square_size_mm"] = square
             axis["steps_per_revolution"] = int(run["steps_per_revolution"])
+            # A new camera/axis profile changes the reference geometry.
+            # Never leave an old laser calibration marked READY after this.
             _save_json(CAMERA_FILE, camera)
             _save_json(AXIS_FILE, axis)
+            previous_laser = _load_json(LASER_FILE, {}) or {}
+            if previous_laser.get("calibrated"):
+                previous_laser["calibrated"] = False
+                previous_laser["invalidated_reason"] = (
+                    "Camera/axis calibration changed; recalibrate the laser plane."
+                )
+                _save_json(LASER_FILE, previous_laser)
             _set_state(done=1, message=(
                 f"Camera calibrated (RMS {camera['rms_reprojection_px']:.2f} px); "
                 f"axis calibrated. Laser calibration is next."
