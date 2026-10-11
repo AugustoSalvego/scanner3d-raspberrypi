@@ -417,6 +417,63 @@ class TestSessionsFromEarlierVersions:
             assert response.status_code == 422
 
 
+def _strict_json(response):
+    """Parse like a browser does: NaN and Infinity are not JSON."""
+
+    def refuse(token):
+        raise ValueError(f"{token} is not valid JSON")
+
+    return json.loads(response.get_data(as_text=True), parse_constant=refuse)
+
+
+class TestResponsesAreValidJson:
+    def test_a_hand_measured_turntable_does_not_break_the_status(self, client):
+        """Its rms_mm is infinite; the status used to contain ``Infinity`` and the
+        dashboard showed "Mode: undefined"."""
+
+        assert client.post("/api/settings/mode", json={"mode": "physical"}).status_code == 200
+        assert (
+            client.post(
+                "/api/calibration/turntable/manual",
+                json={"axis_origin": [0, 60, 320], "axis_direction": [0, -1, 0], "steps_per_revolution": 4096},
+            ).status_code
+            == 201
+        )
+
+        for url in ("/api/status", "/api/calibration", "/api/health"):
+            body = _strict_json(client.get(url))
+
+            assert body["success"] is True, url
+
+        status = _strict_json(client.get("/api/status"))["data"]
+
+        assert status["mode"] == "physical"
+        assert status["calibration"]["turntable"]["rms_mm"] is None
+
+    def test_json_safe(self):
+        from web_interface.api_response import json_safe
+
+        value = {
+            "a": float("inf"),
+            "b": [float("-inf"), float("nan"), 1.5, 2],
+            "c": np.float64("inf"),
+            "d": np.float32(0.25),
+            "e": True,
+            "f": "Infinity",
+            "g": None,
+        }
+
+        assert json_safe(value) == {
+            "a": None,
+            "b": [None, None, 1.5, 2],
+            "c": None,
+            "d": 0.25,
+            "e": True,
+            "f": "Infinity",
+            "g": None,
+        }
+
+
 class TestAutomaticCalibrationEndpoints:
     def test_status_lists_the_three_steps(self, client):
         body = data(client.get("/api/calibration/auto"))

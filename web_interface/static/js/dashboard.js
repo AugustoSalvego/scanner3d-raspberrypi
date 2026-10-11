@@ -53,12 +53,21 @@
   async function request(url, options) {
     const response = await fetch(url, options);
 
-    let payload = {};
+    let payload = null;
 
     try {
       payload = await response.json();
     } catch (error) {
-      payload = {};
+      payload = null;
+    }
+
+    if (payload === null) {
+      // Never carry on with an empty object: that is how "Mode: undefined"
+      // happened, silently.
+      throw new Error(
+        "The scanner sent a response the browser could not read (" + url + ", HTTP " +
+          response.status + "). Check the server terminal."
+      );
     }
 
     if (!response.ok || payload.success === false) {
@@ -167,7 +176,17 @@
 
       badge.textContent = "OFFLINE";
       badge.className = "pill bad";
+
+      // Say why, once per distinct problem, instead of failing silently.
+      if (state.lastStatusError !== error.message) {
+        state.lastStatusError = error.message;
+        toast(error.message, "error");
+      }
+
+      return;
     }
+
+    state.lastStatusError = null;
   }
 
   function renderStatus(data) {

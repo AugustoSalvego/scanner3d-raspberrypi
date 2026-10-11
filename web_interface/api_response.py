@@ -11,7 +11,10 @@ The duplicated top-level compatibility fields the old API carried (``files``,
 
 from __future__ import annotations
 
+import math
 from typing import Any
+
+import numpy as np
 
 from flask import jsonify
 from werkzeug.wrappers import Response
@@ -20,12 +23,42 @@ from scanner_core import logger
 from scanner_core.errors import ScannerError
 
 
+def json_safe(value: Any) -> Any:
+    """Replace NaN and infinities with ``None``, recursively.
+
+    Python writes them as ``NaN``/``Infinity``, which is not JSON: the browser's
+    ``JSON.parse`` rejects the whole response.  A calibration profile with no
+    fit error (``rms_mm = inf`` for a hand-measured turntable) made every status
+    request unreadable, and the dashboard showed "Mode: undefined" and stopped
+    updating.
+    """
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+
+        return number if math.isfinite(number) else None
+
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+
+    return value
+
+
 def api_success(
     message: str = "Success",
     data: dict[str, Any] | None = None,
     status_code: int = 200,
 ) -> tuple[Response, int]:
-    return jsonify({"success": True, "message": message, "data": data or {}}), status_code
+    return (
+        jsonify({"success": True, "message": message, "data": json_safe(data or {})}),
+        status_code,
+    )
 
 
 def api_error(
@@ -33,7 +66,10 @@ def api_error(
     status_code: int = 400,
     data: dict[str, Any] | None = None,
 ) -> tuple[Response, int]:
-    return jsonify({"success": False, "message": message, "data": data or {}}), status_code
+    return (
+        jsonify({"success": False, "message": message, "data": json_safe(data or {})}),
+        status_code,
+    )
 
 
 def error_from_exception(error: Exception) -> tuple[Response, int]:
