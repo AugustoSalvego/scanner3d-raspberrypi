@@ -1298,6 +1298,14 @@
               preview.src = url;
               preview.dataset.currentUrl = url;
             }
+          } else if (data.preflight_preview_url) {
+            previewBox.hidden = false;
+            const preview = document.getElementById("calibPreviewImage");
+            const url = data.preflight_preview_url;
+            if (!preview.dataset.currentUrl || !preview.dataset.currentUrl.startsWith(url)) {
+              preview.src = url + "?t=" + Date.now();
+              preview.dataset.currentUrl = url;
+            }
           } else {
             previewBox.hidden = true;
           }
