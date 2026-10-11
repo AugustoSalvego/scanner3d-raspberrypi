@@ -83,15 +83,20 @@ def stripe_pixels(frame):
         xs = np.flatnonzero(candidate[y])
         if len(xs) < 2:
             continue
-        # A true laser appears as a narrow, bright connected stripe.
+        # Accept broad stripes on cheap webcams (up to 90 px) while
+        # refining the center around the brightest 15-pixel neighborhood.
         cuts = np.where(np.diff(xs) > 1)[0] + 1
         groups = np.split(xs, cuts)
-        groups = [part for part in groups if 2 <= len(part) <= 22]
+        groups = [part for part in groups if 2 <= len(part) <= 90]
         if not groups:
             continue
         group = max(groups, key=lambda a: float(np.max(red[y, a])))
-        weights = np.maximum(red[y, group].astype(float) - 90.0, 1.0)
-        x = float(np.average(group, weights=weights))
+        peak = int(group[np.argmax(red[y, group])])
+        center_part = group[np.abs(group - peak) <= 7]
+        if len(center_part) < 2:
+            continue
+        weights = np.maximum(red[y, center_part].astype(float) - 90.0, 1.0)
+        x = float(np.average(center_part, weights=weights))
         pts.append((x, float(y)))
     return np.asarray(pts, dtype=np.float64).reshape(-1, 2)
 
