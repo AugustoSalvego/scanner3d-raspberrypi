@@ -15,7 +15,7 @@ LASER_THRESHOLD = 180
 
 MAX_LOG_LINES = 100
 
-SIMULATION_MODE_DEFAULT = True
+SIMULATION_MODE_DEFAULT = False
 
 SCANS_FOLDER = "outputs/scans"
 # Open-loop motor calibration: VERIFY true output-shaft and turntable turns.
