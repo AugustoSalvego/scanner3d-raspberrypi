@@ -1,9 +1,8 @@
-"""Asynchronous, physically driven calibration capture and computation.
+"""Fast functional-first calibration from ONE rigid UPRIGHT checkerboard.
 
-Three checkerboard poses (upright, tilted back, tilted forward) are used.
-1. With the laser OFF: three motorized camera/axis sweeps.
-2. With the laser ON: at least one sweep (three recommended) for laser plane.
-Each run stores the photos, corner detections, step positions, and a report.
+Capture a full rotation first, process the photographs after the motor stops.
+Use normal white illumination for camera+axis, and visible red laser for plane.
+The chessboard must be offset from the rotation axis and mechanically stable.
 """
 from __future__ import annotations
 
@@ -33,8 +32,9 @@ RUN_FILE = RUN_DIR / "run.json"
 CAMERA_FILE = OUTPUT / "camera_calibration.json"
 AXIS_FILE = OUTPUT / "turntable_calibration.json"
 LASER_FILE = OUTPUT / "laser_calibration.json"
-STOPS = 36
-PHOTOS_AT_LEAST = 6
+STOPS = 24
+SETTLE_SECONDS = 0.18
+PHOTOS_AT_LEAST = 8
 
 _state_lock = threading.RLock()
 _stop = threading.Event()
@@ -121,8 +121,8 @@ def stop_calibration():
 
 
 def start_capture(kind, placement, square_mm):
-    if kind not in ("camera", "laser") or placement not in (1, 2, 3):
-        raise CalibrationFailure("Choose camera/laser and placement 1, 2, or 3.")
+    if kind not in ("camera", "laser") or placement != 1:
+        raise CalibrationFailure("This TCC workflow uses only placement 1: the upright board.")
     square = _valid_square(square_mm)
     if not hardware_gate.acquire(blocking=False):
         raise CalibrationFailure("Scanner busy: finish the current scan or calibration first.")
@@ -181,51 +181,65 @@ def _capture_worker(kind, placement, square):
             overlay_file.unlink()
         _save_json(RUN_FILE, run)
 
-        # No simulated motor allowed during calibration. All captures have
-        # commanded step positions saved, including the last segment to 360 deg.
+        # Acquisition must be as quick as is safely possible: stop, settle,
+        # discard one buffered frame, take one photo. Detect corners AFTER motor
+        # movement so expensive OpenCV work never delays the next movement.
         with TurntableMotor(phase_delay=MOTOR_PHASE_DELAY) as motor:
             for i in range(STOPS):
                 if _stop.is_set():
                     raise MotorInterrupted("Calibration stopped by user.")
                 target = round(i * MOTOR_HALF_STEPS_PER_REV / STOPS)
                 motor.move(target - motor.position, cancelled=_stop.is_set)
-                deadline = time.monotonic() + 0.45
+                deadline = time.monotonic() + SETTLE_SECONDS
                 while time.monotonic() < deadline:
                     if _stop.is_set():
                         raise MotorInterrupted("Calibration stopped by user.")
-                    time.sleep(0.03)
-                # Avoid buffered webcam frames from the previous motor position.
-                for _ in range(3):
-                    camera_device.get_frame()
+                    time.sleep(min(0.025, deadline - time.monotonic()))
+                # Drop just one possible stale buffer, not 3+ expensive reads.
+                camera_device.get_frame()
                 frame = camera_device.get_frame()
                 if frame is None:
                     raise CalibrationFailure("The USB webcam returned no frame.")
                 file = folder / f"frame_{i:03d}.jpg"
-                if not cv2.imwrite(str(file), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]):
+                if not cv2.imwrite(str(file), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 92]):
                     raise CalibrationFailure(f"Could not save {file}.")
-                corners = find_board(frame)
-                if corners is not None:
-                    overlay = frame.copy()
-                    cv2.drawChessboardCorners(
-                        overlay, (BOARD_COLUMNS, BOARD_ROWS), corners, True
-                    )
-                    cv2.imwrite(str(overlay_file), overlay)
                 record["frames"].append({
                     "filename": file.relative_to(RUN_DIR).as_posix(),
                     "angle_deg": motor.position * 360.0 / MOTOR_HALF_STEPS_PER_REV,
                     "half_steps": motor.position,
                     "image_size": [frame.shape[1], frame.shape[0]],
-                    "corners": None if corners is None else np.round(
-                        corners.reshape(-1, 2), 4
-                    ).tolist(),
+                    "corners": None,
                 })
-                record["status"] = "running"
                 _save_json(RUN_FILE, run)
-                _set_state(done=i + 1, board_found=sum(
-                    bool(item["corners"]) for item in record["frames"]
-                ), message=f"Captured {i+1}/{STOPS} photos ({key}).")
+                _set_state(done=i + 1, message=f"Rotating and photographing: {i+1}/{STOPS} ({key}).")
             if not _stop.is_set():
                 motor.move(MOTOR_HALF_STEPS_PER_REV - motor.position, cancelled=_stop.is_set)
+
+        _set_state(
+            operation=f"analyze_{kind}", done=0, total=STOPS,
+            message=f"Rotation complete. Identifying board corners in {STOPS} saved photos...",
+        )
+        for i, item in enumerate(record["frames"]):
+            if _stop.is_set():
+                raise MotorInterrupted("Stopped while analyzing saved photographs.")
+            file = RUN_DIR / item["filename"]
+            frame = cv2.imread(str(file), cv2.IMREAD_COLOR)
+            if frame is None:
+                raise CalibrationFailure(f"Cannot read saved calibration photo: {file}")
+            corners = find_board(frame)
+            if corners is not None:
+                item["corners"] = np.round(corners.reshape(-1, 2), 4).tolist()
+                overlay = frame.copy()
+                cv2.drawChessboardCorners(
+                    overlay, (BOARD_COLUMNS, BOARD_ROWS), corners, True
+                )
+                cv2.imwrite(str(overlay_file), overlay)
+            _save_json(RUN_FILE, run)
+            recognized = sum(bool(x["corners"]) for x in record["frames"])
+            _set_state(
+                done=i + 1, board_found=recognized,
+                message=f"Analyzing saved photos: {i+1}/{STOPS}; board in {recognized}.",
+            )
         record["status"] = "complete"
         _set_state(message=f"{key}: complete. Board detected in "
                    f"{sum(bool(f['corners']) for f in record['frames'])}/{STOPS} photos.")
@@ -281,21 +295,30 @@ def _compute_worker(kind):
             by_placement = {}
             all_obs = []
             expected_size = None
-            for i in (1, 2, 3):
-                record = stages.get(f"camera{i}") or {}
-                if record.get("status") != "complete":
-                    raise CalibrationFailure(f"Camera position {i} is incomplete.")
-                observations = _read_observations(record)
-                by_placement[str(i)] = [(a, pts) for a, pts in observations if pts is not None]
-                all_obs.extend(observations)
-                sizes = {tuple(f["image_size"]) for f in record["frames"]}
-                if len(sizes) != 1:
-                    raise CalibrationFailure("Camera image resolution changed mid-calibration.")
-                size = sizes.pop()
-                if expected_size and size != expected_size:
-                    raise CalibrationFailure("Resolution differs across the three positions.")
-                expected_size = size
+            # The previous version required three tilts. Use ONLY camera1.
+            # Reuse already saved upright photos from previous runs, including
+            # an interrupted run if enough recognized images were retained.
+            record = stages.get("camera1") or {}
+            if record.get("status") not in ("complete", "stopped"):
+                raise CalibrationFailure(
+                    "Upright photo sweep not ready. Capture Camera 1 first."
+                )
+            observations = _read_observations(record)
+            upright = [(a, pts) for a, pts in observations if pts is not None]
+            if len(upright) < PHOTOS_AT_LEAST:
+                raise CalibrationFailure(
+                    f"Only {len(upright)} upright photos recognized the board; "
+                    f"need at least {PHOTOS_AT_LEAST}. Reposition and capture again."
+                )
+            sizes = {tuple(f["image_size"]) for f in record.get("frames", [])}
+            if len(sizes) != 1:
+                raise CalibrationFailure("Camera resolution changed during the upright sweep.")
+            expected_size = sizes.pop()
+            by_placement["1"] = upright
+            all_obs.extend(upright)
             camera = compute_camera(all_obs, square, expected_size)
+            camera["single_orientation"] = True
+            camera["limited_validation"] = True
             axis = compute_axis(by_placement, square, camera)
             axis["square_size_mm"] = square
             axis["steps_per_revolution"] = int(run["steps_per_revolution"])
@@ -312,7 +335,7 @@ def _compute_worker(kind):
                 _save_json(LASER_FILE, previous_laser)
             _set_state(done=1, message=(
                 f"Camera calibrated (RMS {camera['rms_reprojection_px']:.2f} px); "
-                f"axis calibrated. Laser calibration is next."
+                f"single-upright axis estimated (limited validation). Laser is next."
             ))
             add_log("Camera and axis calibration saved.")
         else:
@@ -322,9 +345,9 @@ def _compute_worker(kind):
                 raise CalibrationFailure("Calibrate camera and turntable before laser.")
             photos = []
             complete_stages = 0
-            for i in (1, 2, 3):
+            for i in (1,):
                 record = stages.get(f"laser{i}") or {}
-                if record.get("status") != "complete":
+                if record.get("status") not in ("complete", "stopped"):
                     continue
                 complete_stages += 1
                 for entry in record.get("frames", []):
@@ -340,9 +363,11 @@ def _compute_worker(kind):
                     corners = np.asarray(entry["corners"], np.float32).reshape(-1, 1, 2)
                     photos.append((frame, corners, entry["angle_deg"]))
             if not complete_stages:
-                raise CalibrationFailure("Capture at least one laser sweep first.")
+                raise CalibrationFailure("Capture the upright laser sweep before computing the plane.")
             laser = compute_laser_plane(photos, square, camera)
             laser["square_size_mm"] = square
+            laser["single_orientation"] = True
+            laser["limited_validation"] = True
             _save_json(LASER_FILE, laser)
             _set_state(done=1, message=(
                 f"Laser calibrated with {laser['frames_used']} photos; "
