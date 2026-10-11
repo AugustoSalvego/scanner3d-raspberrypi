@@ -9,7 +9,7 @@ def test_calibration_status_returns_guided_workflow():
     data = response.get_json()
     assert data["success"]
     assert data["data"]["board"] == [9, 6]
-    assert data["data"]["stops_per_revolution"] == 36
+    assert data["data"]["stops_per_revolution"] == 24
     assert "camera" in data["data"]["profiles"]
 
 
@@ -31,3 +31,12 @@ def test_diagnostics_filename_is_whitelisted():
     client = app.test_client()
     response = client.get("/api/calibration/workflow/diagnostics/invalid")
     assert response.status_code == 404
+
+
+def test_reject_tilted_placements_in_upright_only_mode():
+    client = app.test_client()
+    response = client.post("/api/calibration/workflow/capture", json={
+        "kind": "camera", "placement": 2, "square_size_mm": 10.0
+    })
+    assert response.status_code == 409
+    assert response.get_json()["success"] is False
