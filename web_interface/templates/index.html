@@ -1149,7 +1149,10 @@
       async function updateStatus() {
         try {
           const response = await fetch("/status");
-          const data = await response.json();
+          if (!response.ok) throw new Error("Status HTTP " + response.status);
+          const payload = await response.json();
+          // The Flask API wraps status under data.status, not at the root.
+          const data = payload.data?.status ?? payload.scanner_status ?? payload;
 
           document.getElementById("versionStatus").textContent =
             data.scanner_version ?? data.version ?? "0.1";
@@ -1195,6 +1198,7 @@
           }
 
           updateStatusBadge(badgeStatus);
+          configuredCaptures = Number(data.scan_steps || configuredCaptures);
           syncScanProgress(data);
         } catch (error) {
           console.error(error);
