@@ -537,6 +537,26 @@
           grid-template-columns: 1fr;
         }
       }
+    
+      /* Action feedback: press animation, loading spinner and live progress. */
+      button { transition: transform 130ms ease, filter 130ms ease, opacity 130ms ease; }
+      button:not(:disabled):active { transform: scale(0.96); filter: brightness(1.15); }
+      button.action-busy { opacity: 0.75; cursor: progress; }
+      button.action-busy::before {
+        content: ""; display: inline-block; width: 12px; height: 12px;
+        margin-right: 8px; vertical-align: -2px; border-radius: 50%;
+        border: 2px solid currentColor; border-right-color: transparent;
+        animation: action-spin 850ms linear infinite;
+      }
+      @keyframes action-spin { to { transform: rotate(360deg); } }
+      .action-progress { margin-top: 16px; border-radius: 10px; padding: 14px;
+        background: rgba(148,163,184,.09); border: 1px solid var(--border); }
+      .action-progress p { margin: 0 0 9px; font-size: 13px; color: var(--text-muted); }
+      .action-progress progress { width: 100%; height: 12px; accent-color: var(--blue); }
+      .action-progress[hidden] { display: none; }
+      @media (prefers-reduced-motion: reduce) {
+        button, button.action-busy::before { animation: none; transition: none; }
+      }
     </style>
   </head>
 
@@ -685,18 +705,23 @@
             </div>
 
             <div class="button-row">
-              <button class="btn-success" onclick="startScan()">
+              <button id="startScanButton" class="btn-success" onclick="startScan()">
                 Start Scan
               </button>
 
-              <button class="btn-danger" onclick="stopScan()">Stop Scan</button>
+              <button id="stopScanButton" class="btn-danger" onclick="stopScan()">Stop Scan</button>
 
-              <button onclick="generatePly()">Generate PLY</button>
+              <button id="generatePlyButton" onclick="generatePly()">Generate Demo PLY</button>
 
               <button class="btn-purple" onclick="downloadLastPly()">
                 Download Last PLY
               </button>
             </div>
+            <div id="scanProgress" class="action-progress" role="status" aria-live="polite" hidden>
+              <p id="scanProgressLabel">Preparing scan...</p>
+              <progress id="scanProgressBar" max="100" value="0"></progress>
+            </div>
+            <p class="card-description">The current PLY generator is a simulation. A real PLY reconstruction is not implemented yet.</p>
           </section>
 
           <section class="card">
@@ -954,52 +979,103 @@
         }
       }
 
+      let scanWasRunning = false;
+      let scanRequestedHere = false;
+      let configuredCaptures = 10;
+
+      function busyButton(id, busy) {
+        const element = document.getElementById(id);
+        if (!element) return;
+        element.classList.toggle("action-busy", busy);
+        element.disabled = busy;
+        element.setAttribute("aria-busy", busy ? "true" : "false");
+      }
+
+      function syncScanProgress(data) {
+        const running = Boolean(data.running);
+        const captured = Number(data.frames_captured || 0);
+        const target = Math.max(1, Number(configuredCaptures) || 10);
+        const wrap = document.getElementById("scanProgress");
+        const label = document.getElementById("scanProgressLabel");
+        const bar = document.getElementById("scanProgressBar");
+        const progress = Math.round(Math.min(100, captured / target * 100));
+
+        if (running) {
+          wrap.hidden = false;
+          label.textContent = "Scanning: " + captured + " / " + target + " photos (" + progress + "%). Please keep the scanner still.";
+          bar.value = progress;
+        } else if (scanWasRunning || scanRequestedHere) {
+          wrap.hidden = false;
+          bar.value = progress;
+          if (data.last_error) {
+            label.textContent = "Scan failed: " + data.last_error;
+            showMessage(label.textContent, "error");
+          } else if (captured >= target && data.point_cloud_generated) {
+            label.textContent = "Capture finished. A demo PLY may have been generated; physical 3D reconstruction still requires calibration.";
+            showMessage(label.textContent, "warning");
+          } else if (captured >= target) {
+            label.textContent = "All photos captured. Physical reconstruction is not yet available.";
+            showMessage(label.textContent, "info");
+          } else {
+            label.textContent = "Stopped after " + captured + " / " + target + " photos.";
+            showMessage(label.textContent, "warning");
+          }
+          scanRequestedHere = false;
+        }
+        scanWasRunning = running;
+        const start = document.getElementById("startScanButton");
+        if (start) start.disabled = running;
+        const stop = document.getElementById("stopScanButton");
+        if (stop) stop.disabled = !running;
+      }
+
       async function startScan() {
+        busyButton("startScanButton", true);
+        showMessage("Starting scanner; waiting for hardware...", "info");
         try {
-          const result = await requestJson("/start-scan", {
-            method: "POST",
-          });
-
-          showMessage(result.message || "Scan started.", "success");
-
+          const result = await requestJson("/start-scan", { method: "POST" });
+          scanRequestedHere = true;
+          showMessage(result.message || "Scan started.", "info");
+          await updateStatus();
+        } catch (error) {
+          scanRequestedHere = false;
+          showMessage("Could not start scan: " + error.message, "error");
+        } finally {
+          busyButton("startScanButton", false);
           updateLogs();
           updateStatus();
-        } catch (error) {
-          showMessage(error.message, "warning");
         }
       }
 
       async function stopScan() {
+        busyButton("stopScanButton", true);
+        showMessage("Sending stop request...", "info");
         try {
-          const result = await requestJson("/stop-scan", {
-            method: "POST",
-          });
-
+          const result = await requestJson("/stop-scan", { method: "POST" });
           showMessage(result.message || "Stop requested.", "warning");
-
+        } catch (error) {
+          showMessage("Could not stop: " + error.message, "error");
+        } finally {
+          busyButton("stopScanButton", false);
           updateLogs();
           updateStatus();
-        } catch (error) {
-          showMessage(error.message, "error");
         }
       }
 
       async function generatePly() {
+        const accepted = window.confirm("Current generator creates a DEMO point cloud, not a real scan. Continue?");
+        if (!accepted) return;
+        busyButton("generatePlyButton", true);
         try {
-          const result = await requestJson("/generate-ply", {
-            method: "POST",
-          });
-
-          showMessage(
-            result.message || "PLY generated successfully.",
-            "success",
-          );
-
-          updateLogs();
-          updateStatus();
+          const result = await requestJson("/generate-ply", { method: "POST" });
+          showMessage((result.message || "PLY generated.") + " DEMO ONLY.", "warning");
           updatePointClouds();
         } catch (error) {
           showMessage(error.message, "error");
+        } finally {
+          busyButton("generatePlyButton", false);
+          updateLogs();
+          updateStatus();
         }
       }
 
@@ -1119,6 +1195,7 @@
           }
 
           updateStatusBadge(badgeStatus);
+          syncScanProgress(data);
         } catch (error) {
           console.error(error);
         }
@@ -1221,6 +1298,7 @@
 
           document.getElementById("scanStepsInput").value =
             settings.scan_steps ?? 10;
+          configuredCaptures = Number(settings.scan_steps ?? 10);
 
           document.getElementById("stepDelayInput").value =
             settings.step_delay ?? 1.0;
