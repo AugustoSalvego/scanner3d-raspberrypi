@@ -114,6 +114,7 @@ def test_laser_plane_reconstructed_from_bright_red_stripes():
     result = compute_laser_plane(observations, SQUARE, PROFILE)
     n = np.array(result["plane_normal_camera"])
     assert abs(n[0]) > 0.98
-    # A plane normal may be globally sign-flipped without changing geometry.
-    predicted_x = -result["plane_offset_mm"] / n[0]
-    assert abs(predicted_x - 8.0) < 2.0
+    # Calibration is observed near the board at camera Z=560 mm. Extrapolating
+    # the fitted plane to Z=0 magnifies subpixel line-centre measurement bias.
+    predicted_x_at_board = -(result["plane_offset_mm"] + n[2] * 560.0) / n[0]
+    assert abs(predicted_x_at_board - 8.0) < 1.0
