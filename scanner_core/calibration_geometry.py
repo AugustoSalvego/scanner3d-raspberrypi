@@ -54,11 +54,29 @@ def find_board(frame):
     return np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
 
 
+def board_area_pixels(corners):
+    """Projected convex hull area; reject near edge-on/degenerate board poses."""
+    if corners is None:
+        return 0.0
+    points = np.asarray(corners, np.float32).reshape(-1, 2)
+    if len(points) != BOARD_ROWS * BOARD_COLUMNS:
+        return 0.0
+    return float(cv2.contourArea(cv2.convexHull(points)))
+
+
 def solve_board_pose(corners, square_mm, camera):
+    if board_area_pixels(corners) < 200.0:
+        raise CalibrationFailure("Checkerboard is too edge-on for reliable pose estimation.")
     obj = object_points(square_mm)
     K = np.asarray(camera["camera_matrix"], np.float64)
     dist = np.asarray(camera["distortion_coefficients"], np.float64)
-    success, rvec, tvec = cv2.solvePnP(obj, corners, K, dist, flags=cv2.SOLVEPNP_ITERATIVE)
+    try:
+        success, rvec, tvec = cv2.solvePnP(
+            obj, np.ascontiguousarray(corners, dtype=np.float32),
+            K, dist, flags=cv2.SOLVEPNP_ITERATIVE
+        )
+    except cv2.error as error:
+        raise CalibrationFailure(f"OpenCV checkerboard pose failed: {error}") from error
     if not success or tvec[2, 0] <= 0:
         raise CalibrationFailure("Unable to estimate a visible checkerboard pose.")
     R, _ = cv2.Rodrigues(rvec)
@@ -71,7 +89,8 @@ def solve_board_pose(corners, square_mm, camera):
 
 def compute_camera(observations, square_mm, image_size):
     """Observations: (angle_deg, corners), all from one fixed camera."""
-    valid = [(angle, pts) for angle, pts in observations if pts is not None]
+    valid = [(angle, pts) for angle, pts in observations
+             if pts is not None and board_area_pixels(pts) >= 200.0]
     if len(valid) < MIN_CORNER_VIEWS:
         raise CalibrationFailure(
             f"Found chessboard in {len(valid)} images; need at least {MIN_CORNER_VIEWS}. "
@@ -129,9 +148,12 @@ def compute_axis(by_placement, square_mm, camera):
         theta = []
         centers = []
         for angle, corners in samples:
-            if corners is None:
+            if board_area_pixels(corners) < 200.0:
                 continue
-            center, _, _, _, _ = solve_board_pose(corners, square_mm, camera)
+            try:
+                center, _, _, _, _ = solve_board_pose(corners, square_mm, camera)
+            except CalibrationFailure:
+                continue
             theta.append(math.radians(float(angle)))
             centers.append(center)
         if len(theta) < 6:
