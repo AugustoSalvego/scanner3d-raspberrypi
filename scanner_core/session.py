@@ -39,6 +39,7 @@ def create_scan_session():
         "finished_at": None,
         "captures": [],
         "point_clouds": [],
+        "capture_positions": [],
         "status": "running"
     }
 
@@ -96,6 +97,22 @@ def add_capture_to_session(filename):
     )
 
 
+def add_capture_position(filename, half_steps, angle_deg, physical):
+    """Store real, commanded motor position alongside each saved photograph.
+
+    This is open-loop position (no encoder); verify the motor does not skip steps.
+    """
+    if current_session is None:
+        return
+    current_session["metadata"].setdefault("capture_positions", []).append({
+        "filename": filename,
+        "half_steps": int(half_steps),
+        "angle_deg": round(float(angle_deg), 6),
+        "physical": bool(physical),
+    })
+    save_metadata(current_session["session_path"], current_session["metadata"])
+
+
 def add_point_cloud_to_session(filename):
     if current_session is None:
         return
@@ -110,7 +127,7 @@ def add_point_cloud_to_session(filename):
     )
 
 
-def finish_current_session():
+def finish_current_session(status="finished"):
     global current_session
 
     if current_session is None:
@@ -118,7 +135,7 @@ def finish_current_session():
 
     metadata = current_session["metadata"]
 
-    metadata["status"] = "finished"
+    metadata["status"] = status
     metadata["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     save_metadata(
