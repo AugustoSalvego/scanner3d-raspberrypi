@@ -21,23 +21,30 @@ Esta branch deriva exclusivamente de `hardware-integration` (commit `6470d49`). 
 - O gerador de PLY herdado é **simulado** e está identificado como DEMO; o fluxo físico não o chama.
 - Não movimentar a base com tabuleiro desequilibrado; garantir apoio mecânico, folga dos fios e ausência de colisões.
 
-## Calibração rápida — primeiro resultado experimental
+## MVP: validação física prioritária
 
-**Mudança de escopo:** o primeiro experimento usa **uma única orientação vertical do tabuleiro** (9 × 6 cantos internos, quadrados medidos de 10 mm), sem as inclinações de 15–25° das primeiras versões.
+**Só um resultado:** escanear um cilindro pequeno e fosco com o laser e produzir um arquivo PLY de pontos REAIS. Não é necessário STL ou malha perfeita neste primeiro marco.
 
-- Uma volta de **24 paradas/fotografias** (15° nominais entre paradas); motor usa os passos já definidos, não um deslocamento simulado.
-- Após cada parada: **0,18 s** iniciais para a plataforma estabilizar, descartar no máximo um frame antigo e salvar a foto. Se houver borrão, aumentar a pausa no código.
-- O OpenCV detecta os cantos **depois de a base completar a volta**, para não deixar o motor parado esperando processamento pesado.
-- O tabuleiro deve ser fixado verticalmente, aproximadamente 2 cm fora do eixo, mas sem desequilibrar nem inclinar a plataforma. Uma posição exatamente centralizada reduz o movimento circular utilizado na estimativa.
-- **Etapa câmera + eixo:** iluminação branca difusa, laser desligado. `Compute Camera + Axis` aproveita somente `camera1`, inclusive sessões anteriores interrompidas que tenham pelo menos oito fotos válidas e boa variação angular.
-- **Etapa laser:** mesmo tabuleiro vertical, linha vermelha ligada sobre os quadrados e iluminação suficiente para detectar os cantos. `Compute Laser Plane` utiliza somente `laser1`.
-- A execução é marcada como **validação limitada**: dados de uma única orientação podem deixar parâmetros ópticos e geométricos mal determinados. O programa rejeita menos de oito observações, amplitude angular insuficiente ou resíduos excessivos, mas somente o scan de um objeto de dimensões conhecidas poderá avaliar a reconstrução.
-- Fotografias e relatórios ficam em `outputs/calibration/chatgpt_version/`. Calibrações válidas em JSON permanecem em `outputs/calibration/`. Nunca apague `outputs` sem fazer cópia.
-- Enquanto estiver rodando, não faça `git pull` nem reinicie o servidor. Use **Stop Calibration**, aguarde a conclusão da interrupção e só depois atualize.
+1. Abrir o painel Flask simplificado `/`. Não apagar nem limpar dados existentes.
+2. Tabuleiro rígido vertical, quadrados de 10 mm, aproximadamente 2 cm fora do eixo, sem inclinação da plataforma. Laser OFF, luz branca ON. Verificar 54 cantos. Primeiro tentar **Calcular câmera/eixo com fotos salvas** (menu Informações técnicas), pois capturas anteriores podem bastar.
+3. Se as capturas existentes falharem por poucos cantos ou pouca variedade angular: tabuleiro de frente para a câmera, botão **Calibrar câmera + eixo**. A placa executa **36 fotos ao longo de 120° úteis**. A cada movimento espera 0,18 s, fotografa; depois retorna à orientação aproximada inicial, detecta os cantos e calcula automaticamente os parâmetros.
+4. Laser ON com luz suficiente para reconhecer os cantos, tabuleiro ainda vertical, botão **Calibrar plano do laser**, também com 36 fotos na faixa útil e cálculo automático.
+5. Remover tabuleiro; colocar cilindro fosco e claro no centro da plataforma; laser vermelho visível; iniciar escaneamento físico 360°. O sistema guarda fotos e posições comandadas de motor. Confirmar que a plataforma realmente completa uma volta.
+6. **Gerar PLY real** no painel. O processamento detecta a linha vermelha, intersecta os raios da câmera com o plano calibrado, desfaz a rotação do motor, filtra pontos fora da região central e exporta coordenadas mm.
+7. Abrir o PLY no MeshLab. Fotografar a tela, contar os pontos e comparar a forma com o objeto real. Anotar medidas de referência, número de fotos aceitas, cobertura e erros: material direto para resultados do TCC.
 
-### Próximo marco
+### Critério de sucesso mínimo
 
-Ver `camera1: COMPLETE` e `Camera: READY / Turntable axis: READY`. Somente depois ligar o laser e completar `laser1`, antes de iniciar qualquer tentativa de reconstrução PLY verdadeira.
+Um `real_scan_*.ply` ou `real_*.ply` criado de fotografias físicas deve conter pontos 3D organizados em uma forma reconhecível do objeto. A calibração vertical **tem validação limitada** e pode não ter informação suficiente para todos os parâmetros; reprojeção baixa, por si só, não garante boa reconstrução. Se falhar, usar os diagnósticos dos dados já salvos antes de acrescentar qualquer funcionalidade.
+
+### Limitações importantes
+
+- A amostragem angular do tabuleiro usa 36 posições em 120°; sem sensor de posição, os ângulos são comandados e assumem inicialmente 4096 half-steps por volta. Medir uma volta completa da plataforma é indispensável para validar a escala angular.
+- A base deve parar completamente antes da foto. A pausa inicial de 0,18 s é hipótese e deve ser aumentada se houver borrões; o processamento dos cantos ocorre depois da movimentação.
+- O raio útil de reconstrução inicialmente é de 90 mm e a nuvem não tem preenchimento automático de superfícies invisíveis.
+- Todo PLY real é gravado em `outputs/point_clouds/real_<sessão>.ply`. O gerador simulado antigo não participa do novo painel.
+- Testes automatizados de geometria e de integração com fotos sintéticas **não são** validação física. O resultado real depende de testes no Raspberry Pi.
+- Não usar `git pull` com o motor em movimento. Preserve `outputs/`, incluindo calibrações anteriores e todas as fotos.
 
 ## Plano em ordem obrigatória
 
@@ -45,8 +52,8 @@ Ver `camera1: COMPLETE` e `Camera: READY / Turntable axis: READY`. Somente depoi
 - [ ] Testar motor fisicamente e medir passos por volta sem carga instável.
 - [ ] Testar scan de 12–36 fotos e conferir `capture_positions` no metadata.
 - [x] Implementar botão Calibrate com 24 fotos, orientação vertical única, sobreposição de cantos e cálculo experimental. Pendente validação física da reconstrução.
-- [ ] Calibrar eixo de rotação e laser, validar a geometria e salvar arquivos JSON.
-- [ ] Fazer scan real de cilindro fosco, gerar e conferir nuvem PLY.
+- [ ] Obter valores reais de câmera, eixo e plano do laser no Raspberry e validar contra objeto conhecido.
+- [x] Implementar reconstrução experimental de PLY a partir de fotos reais. **Pendente validação no scanner físico.**
 - [ ] Gerar malha simples PLY/STL; medir erro contra objeto conhecido.
 - [ ] Documentar fotos, algoritmo, limitações e resultados do TCC.
 
