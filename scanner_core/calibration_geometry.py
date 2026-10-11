@@ -131,19 +131,26 @@ def compute_camera(observations, square_mm, image_size):
 
 
 def compute_axis(by_placement, square_mm, camera):
-    """Fit C + U*cos(theta) + V*sin(theta) to board centres at motor angles.
+    """Fit a physical turntable axis from one or more board orbits.
 
-    C is on the axis; cross(U,V) determines the axis direction. Three tilted
-    placements give independent axis estimates and expose mechanical wobble.
+    For the functional-first scanner a SINGLE UPRIGHT board is supported.
+    The checkerboard must be off-center so that its projected center traces
+    a circle. Only measured corner poses contribute to the fit.
+    This does not measure lost motor steps or prove the base is wobble-free.
     """
+    keys = [key for key in ("1", "2", "3") if by_placement.get(key)]
+    if not keys:
+        raise CalibrationFailure("No recognized upright checkerboard photos for the rotation axis.")
+
     axes = []
     origins = []
     reports = []
-    for key in ("1", "2", "3"):
-        samples = by_placement.get(key, [])
-        if len(samples) < 6:
+    for key in keys:
+        samples = by_placement[key]
+        if len(samples) < 8:
             raise CalibrationFailure(
-                f"Board placement {key}: only {len(samples)} recognized views; need 6."
+                f"Board position {key}: {len(samples)} recognized images, at least 8 required. "
+                "Keep the upright board visible through a wider angle."
             )
         theta = []
         centers = []
@@ -156,14 +163,19 @@ def compute_axis(by_placement, square_mm, camera):
                 continue
             theta.append(math.radians(float(angle)))
             centers.append(center)
-        if len(theta) < 6:
-            raise CalibrationFailure(f"Not enough checkerboard poses for placement {key}.")
-        # A narrow angular arc makes the fitted rotation axis unreliable.
-        if np.ptp(np.unwrap(theta)) < math.radians(40):
+        if len(theta) < 8:
+            raise CalibrationFailure(f"Board position {key}: too few reliable checkerboard poses.")
+
+        theta = np.unwrap(np.asarray(theta))
+        arc_degrees = math.degrees(float(np.ptp(theta)))
+        if arc_degrees < 50.0:
             raise CalibrationFailure(
-                f"Placement {key} covers under 40 degrees of visible rotation."
+                f"Board position {key}: recognized photos cover only {arc_degrees:.1f} degrees "
+                "(minimum 50 degrees). More angle variation is needed."
             )
         design = np.column_stack([np.ones(len(theta)), np.cos(theta), np.sin(theta)])
+        if np.linalg.cond(design) > 250:
+            raise CalibrationFailure("The visible board angles do not constrain a stable rotation axis.")
         fit, _, _, _ = np.linalg.lstsq(design, np.asarray(centers), rcond=None)
         center, U, V = fit
         radius = (np.linalg.norm(U) + np.linalg.norm(V)) / 2.0
@@ -171,45 +183,50 @@ def compute_axis(by_placement, square_mm, camera):
         normal_size = np.linalg.norm(cross)
         if radius < 4.0 or normal_size < 1e-6:
             raise CalibrationFailure(
-                f"Placement {key}: board motion is too small to determine the rotation axis."
+                f"Board position {key}: the board is too centered or the visible arc "
+                "is insufficient to estimate the rotation axis."
             )
         axis = cross / normal_size
         residual = np.asarray(centers) - design @ fit
         rms = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
-        if rms > 3.0:
+        if not np.isfinite(rms) or rms > 3.0:
             raise CalibrationFailure(
-                f"Placement {key}: observed rotation does not fit a circle (RMS {rms:.2f} mm). "
-                "Check platform wobble and lost motor steps."
+                f"Board position {key}: rotation does not fit a stable circle "
+                f"(RMS {rms:.2f} mm). Check board rigidity and motor steps."
             )
         axes.append(axis)
         origins.append(center)
-        reports.append({"placement": int(key), "views": len(theta),
-                        "orbit_radius_mm": float(radius), "fit_rms_mm": rms})
+        reports.append({
+            "placement": int(key), "views": len(theta),
+            "arc_degrees": round(arc_degrees, 3),
+            "orbit_radius_mm": float(radius), "fit_rms_mm": rms,
+        })
+
+    reference = axes[0]
+    # The fitted circle normal has an arbitrary sign in each placement.
+    axes = [-a if float(a @ reference) < 0 else a for a in axes]
     direction = np.mean(axes, axis=0)
     direction /= np.linalg.norm(direction)
+    origin = np.mean(origins, axis=0)
     spread = [float(math.degrees(math.acos(np.clip(np.dot(a, direction), -1, 1))))
               for a in axes]
-    if max(spread) > 3.0:
-        raise CalibrationFailure(
-            f"The three positions disagree about the axis by {max(spread):.2f} degrees. "
-            "Secure the platform and prevent board movement while rotating."
-        )
-    origin = np.mean(origins, axis=0)
-    # Perpendicular distance of each fitted orbit centre to the common axis.
     center_spread = [
         float(np.linalg.norm(np.cross(c - origin, direction))) for c in origins
     ]
+    if max(spread) > 3.0:
+        raise CalibrationFailure("Board positions disagree about the rotation axis by more than 3 degrees.")
     if max(center_spread) > 3.0:
-        raise CalibrationFailure(
-            f"Turntable axis positions differ by {max(center_spread):.2f} mm. "
-            "The turntable may be tilting under the checkerboard."
-        )
+        raise CalibrationFailure("Estimated axis center differs by more than 3 mm between positions.")
+
+    single = len(keys) == 1
     return {
         "calibrated": True,
         "axis_origin_camera_mm": origin.tolist(),
         "axis_direction_camera": direction.tolist(),
-        "axis_angle_disagreement_deg": max(spread),
-        "axis_offset_disagreement_mm": max(center_spread),
+        "axis_angle_disagreement_deg": None if single else max(spread),
+        "axis_offset_disagreement_mm": None if single else max(center_spread),
+        "single_orientation": single,
+        "limited_validation": single,
         "placements": reports,
     }
 
