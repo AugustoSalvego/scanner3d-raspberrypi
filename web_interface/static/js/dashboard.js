@@ -146,6 +146,13 @@
       state.status = data;
 
       renderStatus(data);
+
+      // The calibration card's hints depend on the mode, which this poll sees
+      // change first.
+      if (state.auto) {
+        renderAutoCalibration(state.auto);
+      }
+
       applyControlState();
 
       const desired = data.scan.running ? POLL_ACTIVE_MS : POLL_IDLE_MS;
@@ -1160,6 +1167,8 @@
 
     if (state.status && state.status.mode !== "physical") {
       lines.push("Switch to physical mode to run the steps.");
+    } else if (state.status && !run.exists && !progress.running) {
+      lines.push("Place the board for step 1, then press Run step 1.");
     }
 
     if (progress.message) {
