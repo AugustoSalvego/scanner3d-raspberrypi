@@ -43,6 +43,8 @@ from scanner_core.calibration_workflow import (
     reset_photos as reset_calibration_photos,
 )
 from scanner_core.hardware_gate import hardware_gate
+from scanner_core.calibration_workflow import RUN_DIR as CALIB_RUN_DIR
+from flask import send_file
 from scanner_core.calibration_geometry import CalibrationFailure
 from scanner_core.viewer import get_viewer_status
 from scanner_core.laser_detection import analyze_laser_frame
@@ -717,6 +719,16 @@ def calibration_workflow_stop():
     if not request_calibration_stop():
         return api_error("No calibration operation is running.", status_code=409)
     return api_success("Calibration stop requested.")
+
+
+@app.route("/api/calibration/workflow/diagnostics/<stage>")
+def calibration_checkerboard_diagnostic(stage):
+    if stage not in {f"{kind}{i}" for kind in ("camera", "laser") for i in (1, 2, 3)}:
+        return api_error("Unknown calibration stage.", status_code=404)
+    path = CALIB_RUN_DIR / "diagnostics" / f"{stage}.jpg"
+    if not path.is_file():
+        return api_error("No recognized checkerboard image for this stage yet.", status_code=404)
+    return send_file(path, mimetype="image/jpeg", conditional=False)
 
 
 @app.route("/api/calibration/workflow/reset", methods=["POST"])
