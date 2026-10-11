@@ -21,12 +21,30 @@ Esta branch deriva exclusivamente de `hardware-integration` (commit `6470d49`). 
 - O gerador de PLY herdado é **simulado** e está identificado como DEMO; o fluxo físico não o chama.
 - Não movimentar a base com tabuleiro desequilibrado; garantir apoio mecânico, folga dos fios e ausência de colisões.
 
+## Calibração rápida — primeiro resultado experimental
+
+**Mudança de escopo:** o primeiro experimento usa **uma única orientação vertical do tabuleiro** (9 × 6 cantos internos, quadrados medidos de 10 mm), sem as inclinações de 15–25° das primeiras versões.
+
+- Uma volta de **24 paradas/fotografias** (15° nominais entre paradas); motor usa os passos já definidos, não um deslocamento simulado.
+- Após cada parada: **0,18 s** iniciais para a plataforma estabilizar, descartar no máximo um frame antigo e salvar a foto. Se houver borrão, aumentar a pausa no código.
+- O OpenCV detecta os cantos **depois de a base completar a volta**, para não deixar o motor parado esperando processamento pesado.
+- O tabuleiro deve ser fixado verticalmente, aproximadamente 2 cm fora do eixo, mas sem desequilibrar nem inclinar a plataforma. Uma posição exatamente centralizada reduz o movimento circular utilizado na estimativa.
+- **Etapa câmera + eixo:** iluminação branca difusa, laser desligado. `Compute Camera + Axis` aproveita somente `camera1`, inclusive sessões anteriores interrompidas que tenham pelo menos oito fotos válidas e boa variação angular.
+- **Etapa laser:** mesmo tabuleiro vertical, linha vermelha ligada sobre os quadrados e iluminação suficiente para detectar os cantos. `Compute Laser Plane` utiliza somente `laser1`.
+- A execução é marcada como **validação limitada**: dados de uma única orientação podem deixar parâmetros ópticos e geométricos mal determinados. O programa rejeita menos de oito observações, amplitude angular insuficiente ou resíduos excessivos, mas somente o scan de um objeto de dimensões conhecidas poderá avaliar a reconstrução.
+- Fotografias e relatórios ficam em `outputs/calibration/chatgpt_version/`. Calibrações válidas em JSON permanecem em `outputs/calibration/`. Nunca apague `outputs` sem fazer cópia.
+- Enquanto estiver rodando, não faça `git pull` nem reinicie o servidor. Use **Stop Calibration**, aguarde a conclusão da interrupção e só depois atualize.
+
+### Próximo marco
+
+Ver `camera1: COMPLETE` e `Camera: READY / Turntable axis: READY`. Somente depois ligar o laser e completar `laser1`, antes de iniciar qualquer tentativa de reconstrução PLY verdadeira.
+
 ## Plano em ordem obrigatória
 
 - [ ] Testar servidor Flask e pré-visualização da câmera.
 - [ ] Testar motor fisicamente e medir passos por volta sem carga instável.
 - [ ] Testar scan de 12–36 fotos e conferir `capture_positions` no metadata.
-- [ ] Implementar botão Calibrate: capturas iluminadas de cantos do tabuleiro, diferentes inclinações e ângulos; sobreposições e erro de reprojeção.
+- [x] Implementar botão Calibrate com 24 fotos, orientação vertical única, sobreposição de cantos e cálculo experimental. Pendente validação física da reconstrução.
 - [ ] Calibrar eixo de rotação e laser, validar a geometria e salvar arquivos JSON.
 - [ ] Fazer scan real de cilindro fosco, gerar e conferir nuvem PLY.
 - [ ] Gerar malha simples PLY/STL; medir erro contra objeto conhecido.
