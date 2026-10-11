@@ -714,7 +714,7 @@
               <div>
                 <h2>Calibrate — 9 × 6 Checkerboard</h2>
                 <p class="card-description">
-                  Real camera, rotation-axis and laser-plane calibration.
+                  One upright checkerboard pose, real camera, rotation axis and laser plane.
                   All three are required for accurate 3D reconstruction.
                 </p>
               </div>
@@ -737,24 +737,14 @@
               <h3>1. Camera and turntable axis — laser OFF</h3>
               <p class="card-description">
                 Use diffuse WHITE lighting, laser OFF, green light OFF.
-                The board remains rigidly in the same position for each full revolution.
-                Change the board tilt only BETWEEN the three sweeps.
+                Keep the board upright and rigidly fixed during the single sweep.
+                No tilting or other positions are needed in this experimental workflow.
               </p>
               <div class="calib-steps">
                 <div class="calib-step">
-                  <strong>1 · Upright</strong><small>Face the camera, standing straight.</small>
-                  <button class="btn-success calib-action" id="calibCamera1" onclick="calibrationCapture('camera',1)">Capture 36 photos</button>
+                  <strong>Upright only</strong><small>Keep vertical; no other orientations.</small>
+                  <button class="btn-success calib-action" id="calibCamera1" onclick="calibrationCapture('camera',1)">Capture 24 photos</button>
                   <span id="stage_camera1" class="stage-status">Not captured</span>
-                </div>
-                <div class="calib-step">
-                  <strong>2 · Lean back</strong><small>Reposition the board 15–25° backward.</small>
-                  <button class="btn-success calib-action" id="calibCamera2" onclick="calibrationCapture('camera',2)">Capture 36 photos</button>
-                  <span id="stage_camera2" class="stage-status">Not captured</span>
-                </div>
-                <div class="calib-step">
-                  <strong>3 · Lean forward</strong><small>Reposition the board 15–25° forward.</small>
-                  <button class="btn-success calib-action" id="calibCamera3" onclick="calibrationCapture('camera',3)">Capture 36 photos</button>
-                  <span id="stage_camera3" class="stage-status">Not captured</span>
                 </div>
               </div>
               <div class="calib-actions">
@@ -768,25 +758,14 @@
               <h3>2. Laser plane — red laser ON</h3>
               <p class="card-description">
                 Keep the camera and laser absolutely fixed. Keep enough diffuse WHITE light
-                to see the board corners, RED laser ON, green light OFF,
-                and capture the board in up to three tilts.
-                Start with upright and add other positions for stronger geometry.
+                to see the board corners, RED laser ON, green light OFF.
+                Use the same upright checkerboard position. No tilting.
               </p>
               <div class="calib-steps">
                 <div class="calib-step">
-                  <strong>1 · Upright</strong><small>Red line must cross the checkerboard.</small>
+                  <strong>Upright only</strong><small>Red line must cross the visible checkerboard.</small>
                   <button class="calib-action" id="calibLaser1" onclick="calibrationCapture('laser',1)">Capture laser</button>
                   <span id="stage_laser1" class="stage-status">Not captured</span>
-                </div>
-                <div class="calib-step">
-                  <strong>2 · Lean back</strong><small>15–25° back, then repeat the sweep.</small>
-                  <button class="calib-action" id="calibLaser2" onclick="calibrationCapture('laser',2)">Capture laser</button>
-                  <span id="stage_laser2" class="stage-status">Not captured</span>
-                </div>
-                <div class="calib-step">
-                  <strong>3 · Lean forward</strong><small>15–25° forward, then repeat the sweep.</small>
-                  <button class="calib-action" id="calibLaser3" onclick="calibrationCapture('laser',3)">Capture laser</button>
-                  <span id="stage_laser3" class="stage-status">Not captured</span>
                 </div>
               </div>
               <div class="calib-actions">
@@ -797,7 +776,7 @@
             </div>
 
             <div id="calibRunBox" class="action-progress" role="status" aria-live="polite">
-              <p id="calibProgressLabel">Ready for calibration.</p>
+              <p id="calibProgressLabel">Ready for upright calibration (24 photos per full turn).</p>
               <progress id="calibProgressBar" max="100" value="0"></progress>
               <div id="calibResult">No calibration profiles computed yet.</div>
             </div>
@@ -1160,7 +1139,7 @@
         const illumination = kind === "camera"
           ? "Confirm: WHITE illumination ON, RED LASER OFF and GREEN illumination OFF."
           : "Confirm: RED LASER ON, GREEN light OFF, with dim diffuse WHITE illumination so all 54 corners remain visible.";
-        const pose = ["upright", "leaning backward", "leaning forward"][placement - 1];
+        const pose = "upright only";
         if (!window.confirm(illumination + "\nBoard: " + pose + ". Start 360° rotation?")) return;
         const id = "calib" + (kind === "camera" ? "Camera" : "Laser") + placement;
         busyButton(id, true);
@@ -1261,8 +1240,8 @@
           document.querySelectorAll(".calib-action").forEach(btn => {
             btn.disabled = busy;
             const isThis =
-              operation === "capture_camera" && btn.id === "calibCamera" + active.placement ||
-              operation === "capture_laser" && btn.id === "calibLaser" + active.placement ||
+              ["capture_camera", "analyze_camera"].includes(operation) && btn.id === "calibCamera" + active.placement ||
+              ["capture_laser", "analyze_laser"].includes(operation) && btn.id === "calibLaser" + active.placement ||
               operation === "compute_camera" && btn.id === "calibComputeCamera" ||
               operation === "compute_laser" && btn.id === "calibComputeLaser";
             btn.classList.toggle("action-busy", busy && isThis);
@@ -1270,7 +1249,7 @@
           });
           const stages = data.stages || {};
           for (const kind of ["camera","laser"]) {
-            for (const n of [1,2,3]) {
+            for (const n of [1]) {
               const key = kind + n;
               const stage = stages[key] || {};
               const element = document.getElementById("stage_" + key);
@@ -1285,8 +1264,7 @@
           const activeKey = operation.startsWith("capture_")
             ? operation.substring("capture_".length) + active.placement
             : null;
-          const candidates = [activeKey, "camera1", "camera2", "camera3",
-                              "laser1", "laser2", "laser3"].filter(Boolean);
+          const candidates = [activeKey, "camera1", "laser1"].filter(Boolean);
           const previewKey = candidates.find(k => stages[k]?.preview_url);
           const previewBox = document.getElementById("calibPreview");
           if (previewKey) {
@@ -1318,8 +1296,10 @@
             "Camera: " + yesno(profiles.camera?.calibrated) +
               (cam.rms_reprojection_px != null ? " · RMS " + cam.rms_reprojection_px.toFixed(3) + " px" : ""),
             "Turntable axis: " + yesno(profiles.turntable?.calibrated) +
-              (axis.axis_offset_disagreement_mm != null
-                ? " · spread " + axis.axis_offset_disagreement_mm.toFixed(2) + " mm" : ""),
+              (axis.single_orientation
+                ? " · upright only (limited validation)"
+                : axis.axis_offset_disagreement_mm != null
+                  ? " · spread " + axis.axis_offset_disagreement_mm.toFixed(2) + " mm" : ""),
             "Laser plane: " + yesno(profiles.laser?.calibrated) +
               (laser.rms_plane_mm != null ? " · RMS " + laser.rms_plane_mm.toFixed(2) + " mm" : "")
           ];
