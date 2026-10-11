@@ -11,7 +11,9 @@ def test_calibration_status_returns_guided_workflow():
     assert data["data"]["board"] == [9, 6]
     assert data["data"]["stops_per_revolution"] == 36
     assert "camera" in data["data"]["profiles"]
-    assert data["data"]["visible_sweep_degrees"] == 120.0
+    assert data["data"]["right_search_step_deg"] == 5.0
+    assert data["data"]["left_capture_step_deg"] == 3.0
+    assert data["data"]["settle_seconds"] == 0.4
 
 
 def test_reject_invalid_capture_parameters_without_touching_motor():
