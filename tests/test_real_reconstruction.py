@@ -8,7 +8,7 @@ import json
 import cv2
 import numpy as np
 
-from scanner_core import real_reconstruction as rec
+from scanner_core import reconstruction as rec
 
 
 def test_ray_plane_intersection_and_rotation():
