@@ -52,6 +52,8 @@ def create_scan_session():
         "finished_at": None,
         "captures": [],
         "point_clouds": [],
+        "reconstruction_status": "pending",
+        "reconstruction_error": None,
         "capture_positions": [],
         "status": "running"
     }
@@ -168,6 +170,33 @@ def finish_current_session(status="finished"):
     add_log(
         f"Scan session finished: {current_session['session_id']}"
     )
+
+
+
+def set_reconstruction_status(session_id, status, filename=None, error=None):
+    """Persist a reconstruction outcome independently from the capture thread."""
+    if status not in ("pending", "running", "finished", "error"):
+        raise ValueError("Invalid reconstruction status.")
+    if (not isinstance(session_id, str) or
+            not session_id.startswith("scan_") or
+            not session_id.replace("_", "").replace("-", "").isalnum()):
+        raise ValueError("Invalid scan session identifier.")
+    session_path = os.path.join(SCANS_FOLDER, session_id)
+    with open(os.path.join(session_path, "metadata.json"), encoding="utf-8") as file:
+        metadata = json.load(file)
+    if metadata.get("session_id") not in (None, session_id):
+        raise ValueError("Session metadata does not match the session directory.")
+    metadata["reconstruction_status"] = status
+    metadata["reconstruction_error"] = str(error) if error else None
+    if filename is not None:
+        if (status != "finished" or not isinstance(filename, str) or
+                os.path.basename(filename) != filename or
+                not filename.endswith(".ply")):
+            raise ValueError("Invalid point-cloud result.")
+        files = metadata.setdefault("point_clouds", [])
+        if filename not in files:
+            files.append(filename)
+    save_metadata(session_path, metadata)
 
 
 def list_scan_sessions():
