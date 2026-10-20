@@ -10,11 +10,21 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="3D Scanner — início">
-      <span class="brand-mark" aria-hidden="true">⬡</span>
-      <span>3D Scanner</span>
-    </a>
-    <div class="connection"><span class="led" id="connection-led"></span><span id="connection-text">Verificando equipamento...</span></div>
+    <div class="topbar-lead">
+      <a class="brand" href="/" aria-label="3D Scanner — início">
+        <span class="brand-mark" aria-hidden="true">⬡</span>
+        <span>3D Scanner</span>
+      </a>
+      <div class="topbar-scan-heading" id="topbar-scan-heading">
+        <span class="eyebrow">DIGITALIZAÇÃO</span>
+        <h1 id="scan-title">Escaneamento 3D</h1>
+        <p>Acompanhe a captura e explore os modelos gerados.</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="header-chip" id="mode-chip">Modo físico</span>
+      <div class="connection"><span class="led" id="connection-led"></span><span id="connection-text">Verificando equipamento...</span></div>
+    </div>
   </header>
   <div class="shell">
     <nav class="sidebar" aria-label="Navegação principal">
@@ -27,7 +37,6 @@
     <main class="workspace" id="workspace">
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <section class="view active" id="view-scan" aria-labelledby="scan-title">
-        <div class="page-heading"><div><span class="eyebrow">DIGITALIZAÇÃO</span><h1 id="scan-title">Escaneamento 3D</h1><p>Acompanhe a captura e explore os modelos gerados.</p></div><span class="header-chip" id="mode-chip">Modo físico</span></div>
         <div class="panel">
           <div class="panel-heading"><h2>◉ Câmera ao vivo</h2><span class="small-pill">Webcam USB</span></div>
           <div class="camera-grid">
