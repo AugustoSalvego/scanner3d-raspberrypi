@@ -91,3 +91,44 @@ def test_real_pipeline_consumes_photos_and_writes_ply(tmp_path, monkeypatch):
     header = (clouds / result["file"]).read_text().split("end_header")[0]
     assert "comment REAL scanner capture" in header
     assert f"element vertex {result['points']}" in header
+
+
+def test_cyan_illumination_does_not_hide_the_red_laser():
+    """Real laser pixels can have very high blue/green channels."""
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    img[:, :, 0] = 200
+    img[:, :, 1] = 200
+    img[100:380, 359:362, 2] = 65
+    pixels = rec.stripe_pixels(img)
+    assert len(pixels) >= 250
+    assert np.max(np.abs(pixels[:, 0] - 360.0)) < 0.5
+
+
+def test_flat_support_detection_removes_a_platform_trace():
+    y = np.arange(100., 180.)
+    pixels = np.column_stack((np.full(len(y), 320.), y))
+    axis_origin = np.zeros(3)
+    axis_direction = np.array([0., 1., 0.])
+    h = np.linspace(0., 45., len(y))
+    h[-18:] = 46.8
+    radius = np.linspace(15., 25., len(y))
+    radius[-18:] = np.linspace(26., 42., 18)
+    points = np.column_stack((radius, h, np.zeros(len(h))))
+    cleaned = rec.exclude_flat_support(
+        pixels, points, axis_origin, axis_direction
+    )
+    assert 45 < len(cleaned) < len(points) - 10
+    assert cleaned[:, 1].max() < 46.0
+
+
+def test_support_detection_keeps_sloping_object():
+    y = np.arange(100., 180.)
+    pixels = np.column_stack((np.full(len(y), 320.), y))
+    points = np.column_stack((
+        np.full(len(y), 20.), np.linspace(-30., 30., len(y)),
+        np.zeros(len(y))
+    ))
+    cleaned = rec.exclude_flat_support(
+        pixels, points, np.zeros(3), np.array([0., 1., 0.])
+    )
+    assert len(cleaned) == len(points)
