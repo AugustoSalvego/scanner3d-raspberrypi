@@ -46,6 +46,8 @@
     state.tab = tab;
     document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + tab));
+    $("topbar-scan-heading").hidden = tab !== "scan";
+    $("mode-chip").hidden = tab !== "scan";
     // Avoid keeping two MJPEG streams open when only one camera panel is visible.
     $("camera-scan").src = tab === "scan" ? "/video" : "";
     $("camera-calibration").src = tab === "calibration" ? "/video" : "";
