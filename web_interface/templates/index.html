@@ -1,332 +1,114 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Scanner 3D — Validação física</title>
-  <style>
-    :root { color-scheme:dark; --bg:#0b1220; --card:#151f2f; --border:#334155; --text:#e6edf6;
-      --muted:#9aaac0; --blue:#38bdf8; --green:#5ee1ac; --red:#ff8293; --orange:#facc85; }
-    * { box-sizing:border-box; }
-    body { background:var(--bg); color:var(--text); font:15px/1.5 system-ui,Arial,sans-serif; margin:0; }
-    header { border-bottom:1px solid var(--border); padding:20px max(20px,calc((100% - 1180px)/2)); }
-    h1 { font-size:23px; line-height:1.2; margin:0 0 5px; }
-    h2 { font-size:18px; margin:0 0 12px; }
-    h3 { font-size:15px; margin:0 0 7px; }
-    p { margin:5px 0 12px; }
-    .muted,small { color:var(--muted); }
-    main { max-width:1180px; margin:auto; padding:20px; }
-    .layout { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; align-items:start; }
-    .stack { display:grid; gap:16px; }
-    .card { border:1px solid var(--border); background:var(--card); padding:18px; border-radius:14px; min-width:0; }
-    .camera { width:100%; aspect-ratio:16/9; display:block; background:#050911; border-radius:9px; object-fit:contain; }
-    .muted.note { font-size:13px; }
-    .actions { display:flex; flex-wrap:wrap; gap:9px; margin:13px 0; }
-    button { border:1px solid #58718b; background:#2a3f5b; color:white; border-radius:9px;
-      font:600 13px/1.3 inherit; padding:10px 13px; cursor:pointer;
-      transition:transform 140ms ease,filter 140ms ease, opacity 140ms ease; }
-    button.primary { background:#075985; border-color:#0ea5e9; }
-    button.success { background:#166348; border-color:#22a66f; }
-    button.stop { background:#732438; border-color:#ef607f; }
-    button:hover:not(:disabled) { filter:brightness(1.12); }
-    button:active:not(:disabled) { transform:scale(.96); }
-    button:disabled { opacity:.48; cursor:not-allowed; }
-    button.busy::before { content:""; display:inline-block; width:11px; height:11px; margin-right:8px;
-      border:2px solid currentColor; border-right-color:transparent; border-radius:50%;
-      animation:spin .8s linear infinite; vertical-align:-2px; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .step { margin:12px 0; padding:12px; border:1px solid #394b62; border-radius:10px; }
-    .step p { font-size:13px; color:var(--muted); }
-    .meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:5px 10px; padding:5px 0; }
-    .status { color:var(--orange); font-size:13px; font-weight:700; }
-    .status.ok { color:var(--green); }
-    .status.fail { color:var(--red); }
-    .progress { width:100%; accent-color:var(--blue); height:12px; display:block; margin:10px 0 4px; }
-    #message { padding:12px 16px; border-radius:11px; margin-bottom:16px;
-      border:1px solid #536881; background:#1b2d43; min-height:42px; }
-    #message.error { border-color:#aa475e; color:#ffd9df; }
-    #message.success { border-color:#277b5d; color:#b8ffe1; }
-    #message.info { border-color:#536881; }
-    input { background:#0e1a2d; color:var(--text); border:1px solid #50647f; border-radius:6px;
-      padding:9px; width:90px; }
-    label { font-size:13px; color:var(--muted); }
-    input[type="checkbox"] { width:auto; accent-color:var(--blue); }
-    .settings { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .result { white-space:pre-wrap; font:13px/1.5 ui-monospace,Consolas,monospace;
-      overflow-wrap:anywhere; color:#b8d0eb; }
-    #preview { display:none; width:100%; max-height:230px; object-fit:contain; background:#050911; margin-top:10px; border-radius:9px; }
-    details { padding-top:12px; border-top:1px solid var(--border); font-size:13px; }
-    summary { cursor:pointer; color:var(--muted); }
-    a { color:#7dd3fc; }
-    #download { display:none; font-weight:700; }
-    #log { max-height:160px; overflow-y:auto; white-space:pre-wrap; color:#cbd5e1; font-size:12px; }
-    @media(max-width:850px) { .layout { grid-template-columns:1fr; } main { padding:12px; } }
-    @media(prefers-reduced-motion:reduce) { button,button.busy::before { transition:none;animation:none; } }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1428">
+  <title>3D Scanner — Painel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  <script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
 </head>
 <body>
-<header>
-  <h1>Scanner 3D · Validação física</h1>
-  <small>Uma meta: calibrar → capturar objeto → gerar uma nuvem real de pontos.</small>
-</header>
-<main>
-  <div id="message" class="info" role="status" aria-live="polite">Conectando ao scanner...</div>
-  <div class="layout">
-    <div class="stack">
-      <section class="card">
-        <h2>Webcam — ao vivo</h2>
-        <img src="/video" class="camera" alt="Prévia da câmera do scanner">
-        <p class="muted note">Mantenha câmera, base e laser imóveis depois da calibração. Imagens e dados anteriores serão preservados.</p>
-        <button id="check" onclick="checkBoard()">Verificar tabuleiro (54 cantos)</button>
-        <img id="preview" alt="Tabuleiro com os cantos encontrados">
-      </section>
-      <section class="card">
-        <h2>Resultado físico</h2>
-        <p id="resultInfo" class="result">Nenhum PLY real gerado nesta execução.</p>
-        <progress id="reconBar" class="progress" max="100" value="0"></progress>
-        <p id="reconProgress" class="muted note">Aguardando escaneamento e calibração.</p>
-        <div class="actions">
-          <button id="reconstruct" class="success" onclick="startReconstruction()">Gerar PLY real</button>
-          <a id="download" href="#">Baixar nuvem de pontos (.ply)</a>
-        </div>
-        <p class="muted note">Abra o arquivo no MeshLab ou CloudCompare. Queremos reconhecer o objeto, mesmo que a superfície ainda tenha ruído.</p>
-      </section>
-      <section class="card">
-        <details>
-          <summary>Informações técnicas / reaproveitar fotos salvas</summary>
-          <p class="muted">Se você já possui fotos de calibração, tente processá-las sem girar outra vez.</p>
-          <div class="actions">
-            <button id="computeCamera" onclick="computeSaved('camera')">Calcular câmera/eixo com fotos salvas</button>
-            <button id="computeLaser" onclick="computeSaved('laser')">Calcular laser com fotos salvas</button>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="3D Scanner — início">
+      <span class="brand-mark" aria-hidden="true">⬡</span>
+      <span>3D Scanner</span>
+    </a>
+    <div class="connection"><span class="led" id="connection-led"></span><span id="connection-text">Verificando equipamento...</span></div>
+  </header>
+  <div class="shell">
+    <nav class="sidebar" aria-label="Navegação principal">
+      <button type="button" class="nav-item active" data-tab="scan">◉ <span>Escanear</span></button>
+      <button type="button" class="nav-item" data-tab="history">▤ <span>Histórico</span></button>
+      <button type="button" class="nav-item" data-tab="calibration">◎ <span>Calibração</span></button>
+      <button type="button" class="nav-item" data-tab="settings">⚙ <span>Configurações</span></button>
+      <div class="sidebar-note"><span class="led"></span> Equipamento de digitalização 3D</div>
+    </nav>
+    <main class="workspace" id="workspace">
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <section class="view active" id="view-scan" aria-labelledby="scan-title">
+        <div class="page-heading"><div><span class="eyebrow">DIGITALIZAÇÃO</span><h1 id="scan-title">Escaneamento 3D</h1><p>Acompanhe a captura e explore os modelos gerados.</p></div><span class="header-chip" id="mode-chip">Modo físico</span></div>
+        <div class="panel">
+          <div class="panel-heading"><h2>◉ Câmera ao vivo</h2><span class="small-pill">Webcam USB</span></div>
+          <div class="camera-grid">
+            <div class="camera-frame"><img id="camera-scan" alt="Imagem ao vivo da câmera do scanner"><div class="camera-overlay">TRANSMISSÃO AO VIVO</div></div>
+            <div class="control-panel">
+              <div class="actions">
+                <button class="btn primary" id="scan-start" type="button">▶ Iniciar escaneamento</button>
+                <button class="btn danger-outline" id="scan-stop" type="button" disabled>■ Parar</button>
+              </div>
+              <dl class="details">
+                <div><dt>Estado</dt><dd id="scan-state">Aguardando...</dd></div>
+                <div><dt>Intervalo angular</dt><dd id="scan-angle">—</dd></div>
+                <div><dt>Capturas previstas</dt><dd id="scan-total">—</dd></div>
+                <div><dt>Última sessão</dt><dd id="scan-session">—</dd></div>
+              </dl>
+              <div class="progress-block">
+                <div class="progress-heading"><strong>Progresso</strong><span id="scan-progress-label">0 / 0</span></div>
+                <div class="progress-track" role="progressbar" aria-label="Fotografias capturadas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="scan-progress-track"><span id="scan-progress-bar"></span></div>
+                <p id="scan-message" class="helper">Pronto para iniciar.</p>
+              </div>
+            </div>
           </div>
-          <p id="technical" class="result"></p>
-          <div id="log"></div>
-        </details>
-      </section>
-    </div>
-    <div class="stack">
-      <section class="card">
-        <h2>1. Calibrar · só tabuleiro vertical</h2>
-        <p class="muted note">Tabuleiro vertical, 9 × 6 cantos. Primeiro procura o limite à direita; volta ao centro e fotografa apenas indo para a esquerda. Pausa de 0,40 s depois de cada movimento.</p>
-        <div class="settings">
-          <label for="square">Lado do quadradinho</label>
-          <input id="square" type="number" min="1" max="100" step=".01" value="10.00">
-          <span class="muted">mm</span>
-          <label><input id="invertRight" type="checkbox"> Inverter giro direita/esquerda</label>
         </div>
-        <div class="step">
-          <div class="meta">
-            <strong>A. Câmera + eixo</strong>
-            <span class="status" id="cameraStatus">Não calibrados</span>
+        <div class="panel viewer-panel">
+          <div class="panel-heading viewer-heading"><h2>⬡ Visualizador 3D</h2><div class="viewer-tools">
+            <label class="select-wrap">Exibir <select id="viewer-source" aria-label="Arquivo PLY para visualizar"><option value="current">Escaneamento atual</option></select></label>
+            <label class="select-wrap">Cores <select id="viewer-color" aria-label="Modo de cores"><option value="rgb">RGB</option><option value="mono">Monocromático</option></select></label>
+            <button class="btn subtle" id="viewer-reset" type="button">Redefinir vista</button>
+            <a class="btn primary" id="viewer-download" href="#" aria-disabled="true">↓ Baixar PLY</a>
+          </div></div>
+          <div class="viewer-grid">
+            <div class="viewer-frame"><canvas id="viewer-canvas" aria-label="Visualizador 3D de nuvem de pontos"></canvas><div class="viewer-placeholder" id="viewer-empty"><span class="empty-icon">⬡</span><strong>O modelo aparecerá aqui</strong><span>Selecione um PLY do histórico ou conclua um escaneamento.</span></div><span class="viewer-hint">Arraste para girar · Roda do mouse para aproximar</span></div>
+            <aside class="model-details"><h3>Detalhes do modelo</h3><dl class="details"><div><dt>Nome</dt><dd id="model-name">—</dd></div><div><dt>Pontos</dt><dd id="model-points">—</dd></div><div><dt>Arquivo</dt><dd id="model-file">—</dd></div><div><dt>Situação</dt><dd id="model-state">Sem modelo</dd></div></dl><p class="helper" id="model-help">A captura e a visualização são independentes.</p></aside>
           </div>
-          <p>Luz branca ligada, lasers desligados. Procura o limite à direita e captura à esquerda. Na primeira movimentação, confira o sentido físico; se estiver invertido, pare e marque “Inverter giro”.</p>
-          <button id="camera" class="primary" onclick="captureCalibration('camera')">Calibrar câmera + eixo</button>
-          <p id="cameraStage" class="muted note"></p>
         </div>
-        <div class="step">
-          <div class="meta">
-            <strong>B. Plano do laser</strong>
-            <span class="status" id="laserStatus">Não calibrado</span>
-          </div>
-          <p>Tabuleiro continua vertical. Ligue o laser vermelho sobre os quadrados; mantenha luz branca suficiente para reconhecer os cantos.</p>
-          <button id="laser" class="primary" onclick="captureCalibration('laser')">Calibrar plano do laser</button>
-          <p id="laserStage" class="muted note"></p>
-        </div>
-        <progress id="calibBar" class="progress" max="100" value="0"></progress>
-        <p id="calibProgress" class="muted note">Aguardando calibração.</p>
-        <button id="stopCalibration" class="stop" onclick="stopCalibration()">Parar calibração</button>
       </section>
-      <section class="card">
-        <h2>2. Escanear um objeto de verdade</h2>
-        <p>Retire o tabuleiro. Coloque um objeto pequeno, fosco e claro no centro. Laser vermelho ligado, incidindo sobre o objeto.</p>
-        <div class="actions">
-          <button id="startScan" class="success" onclick="startScan()">Iniciar escaneamento 360°</button>
-          <button id="stopScan" class="stop" onclick="stopScan()">Parar scan</button>
-        </div>
-        <progress id="scanBar" class="progress" max="100" value="0"></progress>
-        <p class="muted note" id="scanProgress">Aguardando calibração.</p>
-      </section>
-    </div>
-  </div>
-</main>
-<script>
-  let currentCalibration = null, currentScan = null, currentReconstruction = null;
-  const buttons = ["check","camera","laser","stopCalibration","startScan","stopScan","reconstruct","computeCamera","computeLaser"];
-  const byId = id => document.getElementById(id);
 
-  function feedback(text, type = "info") {
-    const el = byId("message");
-    if (el.textContent === text && el.className === type) return;
-    el.textContent = text;
-    el.className = type;
-  }
-  function pending(id, value) {
-    const el = byId(id);
-    if (!el) return;
-    el.classList.toggle("busy", value);
-    if (value) el.disabled = true;
-  }
-  async function api(url, body) {
-    const options = body === undefined ? {} : {
-      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
-    };
-    const response = await fetch(url, options);
-    let payload;
-    try { payload = await response.json(); }
-    catch { throw new Error("Resposta inválida do servidor (" + response.status + ")."); }
-    if (!response.ok || payload.success === false) {
-      throw new Error(payload.message || ("Erro HTTP " + response.status));
-    }
-    return payload;
-  }
-  async function checkBoard() {
-    pending("check",true);
-    feedback("Verificando os 54 cantos; o motor não vai girar...");
-    try {
-      const payload = await api("/api/calibration/workflow/check-board", {});
-      const d = payload.data || {};
-      feedback(payload.message, d.board_detected ? "success" : "error");
-      if (d.preview_url) {
-        byId("preview").src = d.preview_url + "?t=" + Date.now();
-        byId("preview").style.display = "block";
-      }
-    } catch(e) { feedback(e.message,"error"); }
-    finally { pending("check",false); await refresh(); }
-  }
-  async function captureCalibration(kind) {
-    const square = Number(byId("square").value);
-    if (!Number.isFinite(square) || square < 1 || square > 100) {
-      return feedback("Informe o lado de UM quadradinho em milímetros.","error");
-    }
-    const instructions = kind === "camera"
-      ? "Tabuleiro VERTICAL de frente para a câmera. LUZ BRANCA LIGADA, laser VERMELHO DESLIGADO, verde DESLIGADA."
-      : "Tabuleiro VERTICAL de frente para a câmera. LASER VERMELHO LIGADO sobre o tabuleiro, iluminação suficiente para ler os quadrados.";
-    if (!confirm(instructions + "\nSequência: gira à DIREITA procurando o limite visível; retorna ao CENTRO; gira à ESQUERDA, parando para fotografar. Após cada movimento aguarda 0,40 s.\nConfirme que o motor realmente girará à direita; caso contrário use Inverter giro. Continuar?")) return;
-    pending(kind, true);
-    try {
-      await api("/api/calibration/workflow/capture", {kind:kind, placement:1, square_size_mm:square,
-        right_direction:byId("invertRight").checked ? -1 : 1});
-      feedback("Buscando limite à direita, voltando ao centro e fotografando à esquerda. Não mova a câmera nem o tabuleiro.","info");
-    } catch(e) { feedback(e.message,"error"); }
-    finally { pending(kind,false); await refresh(); }
-  }
-  async function computeSaved(kind) {
-    const key = kind === "camera" ? "computeCamera" : "computeLaser";
-    pending(key,true);
-    try {
-      await api("/api/calibration/workflow/compute", {kind:kind});
-      feedback("Calculando parâmetros a partir das fotografias existentes...","info");
-    } catch(e) { feedback(e.message,"error"); }
-    finally { pending(key,false); await refresh(); }
-  }
-  async function stopCalibration() {
-    pending("stopCalibration",true);
-    try {
-      await api("/api/calibration/workflow/stop", {});
-      feedback("Parada solicitada. Aguarde o motor ser liberado.","info");
-    } catch(e) { feedback(e.message,"error"); }
-    finally { pending("stopCalibration",false); await refresh(); }
-  }
-  async function startScan() {
-    if (!confirm("Remova o tabuleiro. Objeto claro no centro e LASER VERMELHO ligado. Escanear 360°?")) return;
-    pending("startScan",true);
-    try {
-      await api("/start-scan", {});
-      feedback("Captura física iniciada. Acompanhe a quantidade de fotos.","info");
-    } catch(e) { feedback(e.message,"error"); }
-    finally { pending("startScan",false); await refresh(); }
-  }
-  async function stopScan() {
-    pending("stopScan",true);
-    try { await api("/stop-scan", {}); feedback("Solicitando parada do scan...","info"); }
-    catch(e) { feedback(e.message,"error"); }
-    finally { pending("stopScan",false); await refresh(); }
-  }
-  async function startReconstruction() {
-    pending("reconstruct",true);
-    try {
-      await api("/api/reconstruction/start", {});
-      feedback("Processando fotografias reais e triangulando a linha do laser...","info");
-    } catch(e) { feedback(e.message,"error"); }
-    finally { pending("reconstruct",false); await refresh(); }
-  }
-  async function refresh() {
-    try {
-      const [calRes,scanRes,reconRes] = await Promise.all([
-        api("/api/calibration/workflow"), api("/status"),api("/api/reconstruction/status")
-      ]);
-      const cal = calRes.data || {}, scan = scanRes.data?.status || scanRes.scanner_status || {};
-      const recon = reconRes.data || {};
-      const calBusy = Boolean(cal.run?.running), scanBusy = Boolean(scan.running),
-            reconBusy = Boolean(recon.running), busy = calBusy || scanBusy || reconBusy;
-      const camera = Boolean(cal.profiles?.camera?.calibrated),
-            axis = Boolean(cal.profiles?.turntable?.calibrated),
-            laser = Boolean(cal.profiles?.laser?.calibrated);
-      const allCalibrated = camera && axis && laser;
-      byId("cameraStatus").textContent = camera && axis ? "Câmera + eixo prontos" : "Pendente";
-      byId("cameraStatus").className = "status" + (camera && axis ? " ok" : "");
-      byId("laserStatus").textContent = laser ? "Plano calculado" : "Pendente";
-      byId("laserStatus").className = "status" + (laser ? " ok" : "");
-      for (const kind of ["camera","laser"]) {
-        const stage = cal.stages?.[kind+"1"];
-        const target = byId(kind+"Stage");
-        target.textContent = stage
-          ? ((stage.images || 0) + " fotos | " + (stage.board_found || 0) +
-             " tabuleiros reconhecidos | " + (stage.status || "?"))
-          : "Ainda sem imagens.";
-      }
-      const cm = cal.run || {};
-      byId("calibBar").value = cm.total ? Math.min(100,Math.round(100*cm.done/cm.total)):0;
-      byId("calibProgress").textContent = cm.message || "Aguardando calibração.";
-      const frames = Number(scan.frames_captured || 0), count = Number(scan.scan_steps || 36);
-      byId("scanBar").value = Math.min(100, count ? Math.round(frames*100/count):0);
-      byId("scanProgress").textContent = scanBusy
-        ? ("Capturando objeto: "+frames+"/"+count+" fotos")
-        : ("Scan parado · fotos nesta sessão: "+frames+"/"+count);
-      byId("reconBar").value = recon.total ? Math.round(100*(recon.done || 0)/recon.total):0;
-      byId("reconProgress").textContent = recon.message || "Aguardando.";
-      if (recon.result?.file) {
-        byId("resultInfo").textContent =
-          "Arquivo: "+recon.result.file+"\nPontos 3D reais: "+recon.result.points+
-          "\nFotos aproveitadas: "+recon.result.usable_frames+"/"+recon.result.total_frames+
-          "\nDimensões aproximadas (mm): "+recon.result.bounding_box_mm.join(" × ")+
-          (recon.result.limited_calibration ? "\nCalibração experimental; medidas requerem validação." : "");
-        byId("download").href="/download-ply/"+encodeURIComponent(recon.result.file);
-        byId("download").style.display="inline";
-      }
-      if (cm.error && cm.error !== currentCalibration) { feedback("Calibração: "+cm.error,"error"); }
-      if (scan.last_error && scan.last_error !== currentScan) { feedback("Scanner: "+scan.last_error,"error"); }
-      if (recon.error && recon.error !== currentReconstruction) { feedback("Reconstrução: "+recon.error,"error"); }
-      currentCalibration=cm.error || null; currentScan=scan.last_error || null;
-      currentReconstruction=recon.error || null;
-      byId("check").disabled=busy;
-      byId("camera").disabled=busy;
-      byId("laser").disabled=busy || !(camera && axis);
-      byId("stopCalibration").disabled=!calBusy || String(cm.operation).startsWith("compute");
-      byId("startScan").disabled=busy || !allCalibrated;
-      byId("stopScan").disabled=!scanBusy;
-      byId("reconstruct").disabled=busy || !allCalibrated;
-      byId("computeCamera").disabled=busy;
-      byId("computeLaser").disabled=busy;
-      const stats = ["Câmera: "+(camera?"calibrada":"pendente"),"Eixo: "+(axis?"calculado":"pendente"),
-        "Laser: "+(laser?"calibrado":"pendente"),"Capturas: "+frames,
-        "Reconstrução: "+(reconBusy?"em andamento":"parada")];
-      byId("technical").textContent=stats.join("\n");
-    } catch(e) {
-      byId("calibProgress").textContent="Sem conexão com o backend: "+e.message;
-    }
-  }
-  async function logs() {
-    try {
-      const r=await api("/logs");
-      const lines=r.logs || r.data?.logs || [];
-      byId("log").textContent=lines.slice(-20).join("\n");
-    } catch(e) { /* Keep primary UI available even without log endpoint. */ }
-  }
-  refresh().then(()=>feedback("Interface pronta. Vamos conseguir nosso primeiro PLY real.","info"));
-  logs();
-  setInterval(refresh,1500);
-  setInterval(logs,5000);
-</script>
+      <section class="view" id="view-history" aria-labelledby="history-title">
+        <div class="page-heading"><div><span class="eyebrow">ARQUIVOS</span><h1 id="history-title">Histórico de escaneamentos</h1><p>Visualize, renomeie, baixe ou exclua sessões anteriores.</p></div><button class="btn subtle" type="button" id="history-refresh">↻ Atualizar</button></div>
+        <div class="panel"><div class="panel-heading"><h2>Escaneamentos salvos</h2><span class="small-pill" id="history-count">—</span></div><div id="history-list" class="session-list"><p class="helper">Carregando histórico...</p></div></div>
+      </section>
+
+      <section class="view" id="view-calibration" aria-labelledby="calibration-title">
+        <div class="page-heading"><div><span class="eyebrow">GEOMETRIA</span><h1 id="calibration-title">Calibração</h1><p>Confira a câmera e execute as etapas sem perder os parâmetros válidos.</p></div><span class="header-chip" id="calibration-chip">Consultando...</span></div>
+        <div class="panel">
+          <div class="panel-heading"><h2>◉ Câmera ao vivo</h2><span class="small-pill">Posicione o tabuleiro 9 × 6</span></div>
+          <div class="camera-grid">
+            <div class="camera-frame"><img id="camera-calibration" alt="Imagem ao vivo para posicionar o tabuleiro de calibração"><div class="camera-overlay">PRÉVIA DE CALIBRAÇÃO</div></div>
+            <div class="control-panel">
+              <h3>Preparação</h3><p class="helper">Mantenha o tabuleiro vertical e inteiramente visível na câmera. A rotina atual usa uma única orientação.</p>
+              <label class="field">Lado de cada quadrado (mm)<input id="cal-square" type="number" value="10" min="1" max="100" step="0.01"></label>
+              <label class="field">Direção de giro para a direita
+                <select id="cal-direction"><option value="1">Normal (+1)</option><option value="-1">Inverter (-1)</option></select>
+              </label>
+              <button type="button" class="btn subtle" id="cal-check">◎ Verificar tabuleiro</button>
+              <p class="helper" id="board-result">A verificação localiza os 54 cantos do padrão.</p>
+              <img class="diagnostic-preview" id="board-preview" alt="Tabuleiro reconhecido" hidden>
+            </div>
+          </div>
+        </div>
+        <div class="calibration-grid">
+          <div class="panel"><div class="panel-heading"><h2>01 · Câmera e eixo</h2><span class="small-pill" id="cal-camera-state">—</span></div><p>Capture uma sequência com o tabuleiro, depois calcule os parâmetros da câmera e do eixo.</p><div class="actions"><button type="button" class="btn primary" id="cal-camera-capture">Capturar sequência</button><button type="button" class="btn subtle" id="cal-camera-compute">Calcular com as fotos</button></div></div>
+          <div class="panel"><div class="panel-heading"><h2>02 · Plano do laser</h2><span class="small-pill" id="cal-laser-state">—</span></div><p>Após calibrar a câmera e o eixo, capture a linha do laser sobre o tabuleiro e calcule o plano.</p><div class="actions"><button type="button" class="btn primary" id="cal-laser-capture">Capturar sequência</button><button type="button" class="btn subtle" id="cal-laser-compute">Calcular com as fotos</button></div></div>
+        </div>
+        <div class="panel"><div class="panel-heading"><h2>Andamento da calibração</h2><button type="button" class="btn danger-outline" id="cal-stop">Parar calibração</button></div><p id="cal-status" class="helper">Aguardando dados...</p><div class="progress-track"><span id="cal-progress"></span></div><p class="helper">Uma calibração válida pode ser reutilizada em diversos escaneamentos.</p></div>
+      </section>
+
+      <section class="view" id="view-settings" aria-labelledby="settings-title">
+        <div class="page-heading"><div><span class="eyebrow">PREFERÊNCIAS</span><h1 id="settings-title">Configurações</h1><p>Ajuste o intervalo angular e os tempos de captura.</p></div></div>
+        <div class="panel settings-panel"><div class="panel-heading"><h2>Movimentação da mesa</h2><span class="small-pill">360° por escaneamento</span></div>
+          <form id="settings-form">
+            <label class="field">Intervalo angular solicitado (°)<input id="settings-angle" type="text" inputmode="decimal" required placeholder="Ex.: 7,5"><small>Informe livremente um valor entre 0,5° e 90°. O motor usa meios-passos inteiros.</small></label>
+            <div class="settings-summary"><div><span>Capturas previstas</span><strong id="settings-count">—</strong></div><div><span>Intervalo médio efetivo</span><strong id="settings-effective">—</strong></div></div>
+            <div class="form-grid"><label class="field">Pausa após movimentação (s)<input id="settings-step-delay" type="number" min="0" max="30" step="0.1"></label><label class="field">Pausa entre fotografias (s)<input id="settings-capture-delay" type="number" min="0" max="30" step="0.1"></label></div>
+            <p class="helper">Essas preferências serão salvas no equipamento. Alterações não modificam uma operação já iniciada.</p>
+            <button class="btn primary" id="settings-save" type="submit">Salvar configurações</button>
+          </form>
+        </div>
+      </section>
+      <footer class="footer">3D Scanner · Controle e reconstrução de nuvens de pontos</footer>
+    </main>
+  </div>
 </body>
 </html>
