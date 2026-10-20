@@ -72,3 +72,42 @@ def test_history_rejects_traversal_and_invalid_names(monkeypatch, tmp_path):
     assert response.status_code == 404
     response = client.delete("/api/sessions/scan_not_found")
     assert response.status_code == 404
+
+
+def test_ply_preview_and_download_from_relative_output_directory(monkeypatch, tmp_path):
+    """Production uses relative outputs/, unlike the older absolute-path test.
+
+    Flask must not accidentally look under web_interface/outputs/.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(session, "SCANS_FOLDER", "outputs/scans")
+    monkeypatch.setattr(session, "POINT_CLOUD_FOLDER", "outputs/point_clouds")
+    item = session.create_scan_session()
+    identifier = item["session_id"]
+    session.finish_current_session()
+    clouds = Path("outputs/point_clouds")
+    clouds.mkdir(parents=True)
+    payload = (
+        b"ply\\nformat ascii 1.0\\nelement vertex 1\\n"
+        b"property float x\\nproperty float y\\nproperty float z\\n"
+        b"end_header\\n0 0 0\\n"
+    ).replace(b"\\\\n", b"\\n")
+    filename = "cloud_" + identifier + ".ply"
+    (clouds / filename).write_bytes(payload)
+    session.set_reconstruction_status(identifier, "finished", filename=filename)
+
+    with app.test_client() as client:
+        history = client.get("/api/sessions")
+        assert history.status_code == 200
+        entry = next(
+            x for x in history.get_json()["data"]["sessions"]
+            if x["session_id"] == identifier
+        )
+        assert entry["ply_available"] is True
+        response = client.get(f"/api/sessions/{identifier}/ply")
+        assert response.status_code == 200
+        assert response.data == payload
+        download = client.get(f"/api/sessions/{identifier}/ply?download=1")
+        assert download.status_code == 200
+        assert download.data == payload
+        assert "attachment" in download.headers["Content-Disposition"]
