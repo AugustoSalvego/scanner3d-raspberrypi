@@ -35,3 +35,33 @@
 .cal-feedback[data-state="error"] strong{color:#a62e48}
 .cal-feedback[data-state="prepared"]{background:#fff8eb;border-color:#f1d7ae}
 .cal-feedback[data-state="prepared"] .cal-feedback-symbol{background:#ffedca;color:#a26d12}
+
+/* Keep the scanning page title next to the product name, freeing the main
+   workspace for the live camera and the point-cloud viewer. */
+.topbar{height:86px;gap:22px}
+.shell{min-height:calc(100vh - 86px)}
+.topbar-lead{display:flex;align-items:center;gap:34px;min-width:0}
+.topbar-lead .brand{flex:none;white-space:nowrap}
+.topbar-scan-heading{border-left:1px solid var(--line);padding-left:28px;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.topbar-scan-heading[hidden],.topbar-right [hidden]{display:none}
+.topbar-scan-heading h1{font-size:18px;line-height:1.25;letter-spacing:-.35px;margin:0;font-weight:750;white-space:nowrap}
+.topbar-scan-heading p{margin:0;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-scan-heading .eyebrow{font-size:9px;letter-spacing:1.6px}
+.topbar-right{display:flex;align-items:center;gap:18px;flex:none}
+@media(max-width:1080px){
+  .topbar{padding:0 18px}
+  .topbar-lead{gap:20px}
+  .topbar-scan-heading{padding-left:18px}
+  .topbar-scan-heading p{display:none}
+}
+@media(max-width:650px){
+  .topbar{height:66px;padding:0 12px;gap:10px}
+  .topbar-lead{gap:10px}
+  .topbar-scan-heading{padding-left:10px;gap:2px}
+  .topbar-scan-heading h1{font-size:12px;letter-spacing:0;max-width:125px;overflow:hidden;text-overflow:ellipsis}
+  .topbar-scan-heading .eyebrow{font-size:8px;letter-spacing:.8px}
+  .topbar-right{gap:6px}
+  .topbar-right .connection{font-size:0}
+  .topbar-right .led{width:10px;height:10px}
+  .sidebar{top:66px}
+}
