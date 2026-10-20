@@ -282,9 +282,11 @@ def get_session_ply(session_id):
         if isinstance(f, str) and f.endswith(".ply")
         and Path(f).name == f
     ]
-    expected = f"real_{session_id}.ply"
-    if expected in entries or (Path(POINT_CLOUD_FOLDER) / expected).is_file():
-        candidates.append(Path(POINT_CLOUD_FOLDER) / expected)
+    # Accept older real_ results without renaming or deleting user files.
+    for prefix in ("cloud_", "real_"):
+        expected = f"{prefix}{session_id}.ply"
+        if expected in entries or (Path(POINT_CLOUD_FOLDER) / expected).is_file():
+            candidates.append(Path(POINT_CLOUD_FOLDER) / expected)
     for path in candidates:
         if not path.is_symlink() and path.is_file():
             parent = path.parent.resolve()
@@ -296,7 +298,8 @@ def get_session_ply(session_id):
 def delete_scan_session(session_id):
     directory = session_directory(session_id)
     # Never delete an unrelated PLY based on untrusted metadata entries.
-    root_ply = Path(POINT_CLOUD_FOLDER) / f"real_{session_id}.ply"
-    if root_ply.is_file() and not root_ply.is_symlink():
-        root_ply.unlink()
+    for prefix in ("cloud_", "real_"):
+        root_ply = Path(POINT_CLOUD_FOLDER) / f"{prefix}{session_id}.ply"
+        if root_ply.is_file() and not root_ply.is_symlink():
+            root_ply.unlink()
     shutil.rmtree(directory)
