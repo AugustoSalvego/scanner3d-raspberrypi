@@ -62,7 +62,7 @@ def _physical_capture(settings):
         )
 
     add_log(f"Physical capture complete: {captures} photographs / one full turn.")
-    add_log("Real point-cloud generation is pending camera, axis and laser calibration.")
+    add_log("Capture complete. Ready for automatic 3D reconstruction.")
 
 
 def _simulated_capture(settings):
@@ -102,11 +102,13 @@ def execute_scan():
     })
     outcome = "error"
     session_started = False
+    session_id = None
 
     try:
         session = create_scan_session()
         session_started = True
-        scanner_state["current_session"] = session["session_id"]
+        session_id = session["session_id"]
+        scanner_state["current_session"] = session_id
         scanner_state["last_session"] = session["session_id"]
 
         simulation = settings["simulation_mode"]
@@ -134,6 +136,12 @@ def execute_scan():
         finally:
             scanner_state["running"] = False
             scanner_state["current_session"] = None
+
+    return {
+        "status": outcome,
+        "session": session_id,
+        "simulation": bool(settings["simulation_mode"]),
+    }
 
 
 def stop():
