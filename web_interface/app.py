@@ -325,8 +325,21 @@ def start_scan():
         return api_error(message="Hardware busy: calibration or another operation is active.", status_code=409)
 
     try:
+        if not get_settings()["simulation_mode"]:
+            from scanner_core.real_reconstruction import load_calibration
+            load_calibration()
+        with _reconstruction_state_lock:
+            _reconstruction_state.update({
+                "running": False, "done": 0, "total": 0,
+                "error": None, "result": None,
+                "message": "Aguardando conclusão das capturas...",
+            })
         thread = threading.Thread(target=_run_scan_exclusive, daemon=True)
         thread.start()
+    except ReconstructionError as error:
+        hardware_gate.release()
+        _scan_start_lock.release()
+        return api_error(f"Calibração necessária: {error}", status_code=409)
     except Exception:
         hardware_gate.release()
         _scan_start_lock.release()
