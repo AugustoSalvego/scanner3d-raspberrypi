@@ -339,12 +339,13 @@
       $("cal-camera-state").textContent=cam?"Calibrado":"Pendente";
       $("cal-laser-state").textContent=laser?"Calibrado":"Pendente";
       $("calibration-chip").textContent=cam&&laser?"Calibração disponível":"Calibração incompleta";
-      $("cal-status").textContent=run.message||"Aguardando operação.";
+      $("cal-status").textContent=(data.pending_recalibration ? "Nova geometria preparada; conclua o plano do laser para ativá-la. " : "") + (run.message||"Aguardando operação.");
       $("cal-progress").style.width=run.total>0?(100*run.done/run.total)+"%":"0%";
       for(const id of ["cal-camera-capture","cal-camera-compute","cal-laser-capture","cal-laser-compute"]){
         $(id).disabled=!!run.running||!!state.scan.running||!!state.reconstruction.running;
       }
       $("cal-stop").disabled=!run.running;
+      $("cal-reset-photos").disabled=!!run.running||!!state.scan.running||!!state.reconstruction.running;
     }catch(error){$("cal-status").textContent=error.message;}
   }
   async function calibrationCommand(path,body){
@@ -354,7 +355,7 @@
   function bind(){
     document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>switchTab(b.dataset.tab)));
     $("scan-start").addEventListener("click",async()=>{
-      try{await post("/start-scan");state.loadedId=null;renderer.clear();notice("Escaneamento iniciado.","success");await refreshStatus();}
+      try{await post("/start-scan");if(state.selected==="current"){state.loadedId=null;renderer.clear();}notice("Escaneamento iniciado.","success");await refreshStatus();}
       catch(error){notice(error.message,"error");}
     });
     $("scan-stop").addEventListener("click",async()=>{try{await post("/stop-scan");notice("Parada solicitada.");}catch(e){notice(e.message,"error");}});
@@ -397,6 +398,11 @@
       ));
     }
     $("cal-stop").addEventListener("click",()=>calibrationCommand("/api/calibration/workflow/stop"));
+    $("cal-reset-photos").addEventListener("click",async()=>{
+      if(!confirm("Apagar fotografias e dados temporários das tentativas anteriores de calibração? Os perfis ativos serão mantidos."))return;
+      try{await post("/api/calibration/workflow/reset");notice("Fotos temporárias removidas; perfis ativos preservados.","success");await refreshCalibration();}
+      catch(error){notice(error.message,"error");}
+    });
   }
   bind();
   switchTab("scan");
