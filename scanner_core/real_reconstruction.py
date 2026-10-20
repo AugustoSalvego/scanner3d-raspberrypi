@@ -175,7 +175,8 @@ def stripe_pixels(frame, camera_geometry=None, radial_limit_mm=90.0):
     return pixels[np.sort(np.concatenate(selected))]
 
 
-def exclude_flat_support(pixels, points_camera, origin, direction):
+def exclude_flat_support(pixels, points_camera, origin, direction,
+                         return_mask=False):
     """Remove a visible flat platform trace without a hardcoded pixel ROI.
 
     The end of a vertical laser trace may continue across the turntable as a
@@ -183,7 +184,7 @@ def exclude_flat_support(pixels, points_camera, origin, direction):
     otherwise leave the input unchanged instead of guessing a base height.
     """
     if len(pixels) < 36 or len(pixels) != len(points_camera):
-        return points_camera
+        return (points_camera, np.ones(len(points_camera), dtype=bool)) if return_mask else points_camera
     relative = points_camera - origin
     axial = relative @ direction
     radial = np.linalg.norm(
@@ -199,16 +200,16 @@ def exclude_flat_support(pixels, points_camera, origin, direction):
         float(np.ptp(radial[tail])) >= 5.0 and
         abs(plane - first_height) >= 4.0
     ):
-        return points_camera
-    if first_height < plane:
-        return points_camera[axial < plane - 1.5]
-    return points_camera[axial > plane + 1.5]
+        return (points_camera, np.ones(len(points_camera), dtype=bool)) if return_mask else points_camera
+    mask = axial < plane - 1.5 if first_height < plane else axial > plane + 1.5
+    return (points_camera[mask], mask) if return_mask else points_camera[mask]
 
 
-def project_laser_points(pixels, K, dist, plane_normal, plane_offset):
+def project_laser_points(pixels, K, dist, plane_normal, plane_offset, return_mask=False):
     """Intersect each undistorted camera ray with the calibrated laser plane."""
     if not len(pixels):
-        return np.empty((0, 3), dtype=np.float64)
+        empty = np.empty((0, 3), dtype=np.float64)
+        return (empty, np.zeros(0, dtype=bool)) if return_mask else empty
     xy = cv2.undistortPoints(pixels.reshape(-1, 1, 2), K, dist).reshape(-1, 2)
     rays = np.column_stack([xy, np.ones(len(xy))])
     denominator = rays @ plane_normal
@@ -216,13 +217,15 @@ def project_laser_points(pixels, K, dist, plane_normal, plane_offset):
     depths = np.zeros(len(rays), dtype=np.float64)
     depths[valid] = -plane_offset / denominator[valid]
     valid &= (depths > 10.0) & (depths < 2500.0)
-    return rays[valid] * depths[valid, None]
+    result = rays[valid] * depths[valid, None]
+    return (result, valid) if return_mask else result
 
 
-def rotate_back_and_filter(points, degrees, origin, direction, radial_limit_mm=90.0):
+def rotate_back_and_filter(points, degrees, origin, direction, radial_limit_mm=90.0,
+                           return_mask=False):
     """Convert camera XYZ to common fixed-object frame, rejecting wall points."""
     if not len(points):
-        return points
+        return (points, np.zeros(0, dtype=bool)) if return_mask else points
     centered = points - origin
     axis_height = centered @ direction
     radial = centered - axis_height[:, None] * direction
@@ -232,10 +235,11 @@ def rotate_back_and_filter(points, degrees, origin, direction, radial_limit_mm=9
               (axis_height >= -150.0) & (axis_height <= 150.0))
     centered = centered[within]
     if not len(centered):
-        return centered
+        return (centered, within) if return_mask else centered
     rvec = direction * math.radians(-float(degrees))
     rotation, _ = cv2.Rodrigues(rvec)
-    return centered @ rotation.T
+    output = centered @ rotation.T
+    return (output, within) if return_mask else output
 
 
 def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=None):
@@ -288,6 +292,7 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=
 
     positions = meta["capture_positions"]
     all_points = []
+    all_colors = []
     valid_frames = 0
     for i, position in enumerate(positions):
         filename = Path(str(position["filename"])).name
@@ -302,16 +307,31 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=
             frame, camera_geometry=(K, dist, normal, offset, origin, direction),
             radial_limit_mm=radial_limit_mm,
         )
-        points_camera = project_laser_points(pixels, K, dist, normal, offset)
-        points_camera = exclude_flat_support(
-            pixels, points_camera, origin, direction
+        # Sample diffuse surface appearance beside the bright red laser,
+        # rather than confusing laser emission with the object's color.
+        x = np.rint(pixels[:, 0]).astype(int)
+        y = np.clip(np.rint(pixels[:, 1]).astype(int), 0, frame.shape[0] - 1)
+        left = frame[y, np.clip(x - 12, 0, frame.shape[1] - 1)]
+        right = frame[y, np.clip(x + 12, 0, frame.shape[1] - 1)]
+        colors = np.rint(
+            (left.astype(np.float32) + right.astype(np.float32)) * 0.5
+        ).astype(np.uint8)[:, ::-1]  # OpenCV BGR -> PLY RGB.
+        points_camera, ray_mask = project_laser_points(
+            pixels, K, dist, normal, offset, return_mask=True
         )
-        points_local = rotate_back_and_filter(
-            points_camera, float(position["angle_deg"]), origin,
-            direction, radial_limit_mm=radial_limit_mm,
+        pixels, colors = pixels[ray_mask], colors[ray_mask]
+        points_camera, support_mask = exclude_flat_support(
+            pixels, points_camera, origin, direction, return_mask=True
         )
+        colors = colors[support_mask]
+        points_local, spatial_mask = rotate_back_and_filter(
+            points_camera, float(position["angle_deg"]), origin, direction,
+            radial_limit_mm=radial_limit_mm, return_mask=True
+        )
+        colors = colors[spatial_mask]
         if len(points_local) >= 5:
             all_points.append(points_local)
+            all_colors.append(colors)
             valid_frames += 1
         if progress_callback:
             progress_callback(i + 1, len(positions))
@@ -322,10 +342,12 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=
             "Check red line visibility, calibrations and the non-red matte object."
         )
     cloud = np.concatenate(all_points)
-    # Use a lightweight voxel filter to reduce duplicate/noisy points.
+    colors = np.concatenate(all_colors)
+    # Keep XYZ and RGB aligned when removing duplicate voxels.
     bins = np.rint(cloud / 0.4).astype(np.int64)
     _, indices = np.unique(bins, axis=0, return_index=True)
-    cloud = cloud[np.sort(indices)]
+    indices = np.sort(indices)
+    cloud, colors = cloud[indices], colors[indices]
     # Express in consistent output axes (Z = rotation axis).
     xyz = np.column_stack([cloud @ x_basis, cloud @ y_basis, cloud @ direction])
     if len(xyz) < 120:
@@ -340,9 +362,13 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=
         f.write("ply\nformat ascii 1.0\n")
         f.write("comment REAL scanner capture, camera/laser triangulation, mm\n")
         f.write(f"element vertex {len(xyz)}\n")
-        f.write("property float x\nproperty float y\nproperty float z\nend_header\n")
-        for x, y, z in xyz:
-            f.write(f"{x:.4f} {y:.4f} {z:.4f}\n")
+        f.write(
+            "property float x\nproperty float y\nproperty float z\n"
+            "property uchar red\nproperty uchar green\n"
+            "property uchar blue\nend_header\n"
+        )
+        for (x, y, z), (red, green, blue) in zip(xyz, colors):
+            f.write(f"{x:.4f} {y:.4f} {z:.4f} {red} {green} {blue}\n")
     tmp_path.replace(out_path)
     return {
         "file": out_path.name,
