@@ -1,5 +1,7 @@
 import json
 import os
+import tempfile
+import uuid
 from datetime import datetime
 
 from scanner_core.config import SCANS_FOLDER
@@ -12,13 +14,22 @@ current_session = None
 def create_scan_session():
     global current_session
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_id = f"scan_{timestamp}"
-
-    session_path = os.path.join(
-        SCANS_FOLDER,
-        session_id
-    )
+    # The clock is useful for humans, but never sufficient for uniqueness.
+    # mkdir is exclusive and protects sessions even after an incorrect clock reset.
+    os.makedirs(SCANS_FOLDER, exist_ok=True)
+    for _ in range(10):
+        now = datetime.now().astimezone()
+        session_id = (
+            f"scan_{now:%Y%m%d_%H%M%S_%f}_{uuid.uuid4().hex[:8]}"
+        )
+        session_path = os.path.join(SCANS_FOLDER, session_id)
+        try:
+            os.mkdir(session_path)
+        except FileExistsError:
+            continue
+        break
+    else:
+        raise RuntimeError("Unable to allocate a unique scan session.")
 
     captures_path = os.path.join(
         session_path,
@@ -30,12 +41,14 @@ def create_scan_session():
         "point_clouds"
     )
 
-    os.makedirs(captures_path, exist_ok=True)
-    os.makedirs(point_clouds_path, exist_ok=True)
+    os.mkdir(captures_path)
+    os.mkdir(point_clouds_path)
 
     metadata = {
         "session_id": session_id,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "created_at_iso": now.isoformat(timespec="seconds"),
+        "display_name": None,
         "finished_at": None,
         "captures": [],
         "point_clouds": [],
@@ -75,12 +88,19 @@ def save_metadata(session_path, metadata):
         "metadata.json"
     )
 
-    with open(metadata_path, "w", encoding="utf-8") as file:
-        json.dump(
-            metadata,
-            file,
-            indent=4
-        )
+    # Replace the complete document atomically: a restart must not corrupt it.
+    fd, temporary_path = tempfile.mkstemp(
+        prefix=".metadata_", suffix=".tmp", dir=session_path
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            json.dump(metadata, file, indent=4, ensure_ascii=False)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary_path, metadata_path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
 
 def add_capture_to_session(filename):
@@ -136,7 +156,9 @@ def finish_current_session(status="finished"):
     metadata = current_session["metadata"]
 
     metadata["status"] = status
-    metadata["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    finished = datetime.now().astimezone()
+    metadata["finished_at"] = finished.strftime("%Y-%m-%d %H:%M:%S")
+    metadata["finished_at_iso"] = finished.isoformat(timespec="seconds")
 
     save_metadata(
         current_session["session_path"],
@@ -170,13 +192,18 @@ def list_scan_sessions():
         if not os.path.exists(metadata_path):
             continue
 
-        with open(metadata_path, "r", encoding="utf-8") as file:
-            metadata = json.load(file)
-
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as file:
+                metadata = json.load(file)
+        except (OSError, ValueError) as error:
+            add_log(f"Skipping unreadable session {session_id}: {error}")
+            continue
+        if not isinstance(metadata, dict):
+            continue
         sessions.append(metadata)
 
     sessions.sort(
-        key=lambda item: item["created_at"],
+        key=lambda item: item.get("created_at", ""),
         reverse=True
     )
 
