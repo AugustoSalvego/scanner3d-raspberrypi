@@ -21,17 +21,15 @@ jobs:
       - name: Validate Python syntax
         run: |
           python -m compileall -q scanner_core web_interface tests
-      - name: Validate dashboard JavaScript
+      - name: Validate dashboard assets
         run: |
+          node --check web_interface/static/dashboard.js
           python - <<'PY'
           from pathlib import Path
-          import re
           html = Path("web_interface/templates/index.html").read_text()
-          scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, re.S)
-          assert scripts, "No dashboard script found"
-          Path("/tmp/scanner-dashboard.js").write_text(scripts[0])
+          assert "dashboard.js" in html and "dashboard.css" in html
+          assert Path("web_interface/static/dashboard.css").is_file()
           PY
-          node --check /tmp/scanner-dashboard.js
       - name: Test calibration geometry and Flask API
         run: |
           python -m pytest tests/test_calibration_geometry.py tests/test_calibration_api.py tests/test_calibration_motor_flow.py tests/test_real_reconstruction.py tests/test_session_management.py tests/test_scan_lifecycle.py -q
