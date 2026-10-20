@@ -20,6 +20,7 @@ def get_status():
     settings = get_settings()
 
     status["scan_steps"] = settings["scan_steps"]
+    status["angle_deg"] = settings["angle_deg"]
     status["step_delay"] = settings["step_delay"]
     status["capture_delay"] = settings["capture_delay"]
     status["simulation_mode"] = settings["simulation_mode"]
