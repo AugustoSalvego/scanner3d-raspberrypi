@@ -725,8 +725,11 @@ def session_ply(session_id):
         return api_error(str(error), status_code=400)
     except (OSError, FileNotFoundError):
         return api_error("Arquivo PLY indisponível.", status_code=404)
+    # Flask resolves relative send_from_directory paths against app.root_path
+    # (web_interface/), while scan files live in the repository's outputs/.
+    # Resolve the directory to an absolute path before passing it to Flask.
     return send_from_directory(
-        str(file.parent), file.name,
+        str(file.parent.resolve()), file.name,
         as_attachment=request.args.get("download") == "1",
         mimetype="application/octet-stream"
     )
