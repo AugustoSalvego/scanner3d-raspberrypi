@@ -61,6 +61,39 @@ def _save_json(path, value):
     os.replace(tmp, path)
 
 
+def _pending_geometry():
+    """New camera/axis geometry remains inactive until the laser is calibrated."""
+    pending = _load_json(RUN_DIR / "pending_geometry.json", None)
+    if pending is None:
+        return None
+    if not isinstance(pending, dict) or not all(
+        isinstance(pending.get(k), dict) and pending[k].get("calibrated")
+        for k in ("camera", "axis")
+    ):
+        raise CalibrationFailure("Pending camera/axis calibration is incomplete.")
+    return pending
+
+
+def _publish_profiles(profiles):
+    """Retain the last active profiles if a write fails midway."""
+    old = {p: p.read_bytes() if p.is_file() else None for p in profiles}
+    try:
+        for path, data in profiles.items():
+            _save_json(path, data)
+    except Exception:
+        for path, data in old.items():
+            try:
+                if data is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    rollback = path.with_suffix(path.suffix + ".rollback")
+                    rollback.write_bytes(data)
+                    os.replace(rollback, path)
+            except OSError as error:
+                add_log(f"Calibration rollback failed for {path}: {error}")
+        raise
+
+
 def _load_json(path, default=None):
     if not path.is_file():
         return default
@@ -124,6 +157,7 @@ def calibration_status():
             if (RUN_DIR / "diagnostics" / "preflight.jpg").is_file() else None
         ),
         "profiles": profiles,
+        "pending_recalibration": (RUN_DIR / "pending_geometry.json").is_file(),
     }
 
 
@@ -138,7 +172,7 @@ def stop_calibration():
 
 def start_capture(kind, placement, square_mm, right_direction=None):
     if kind not in ("camera", "laser") or placement != 1:
-        raise CalibrationFailure("This TCC workflow uses only placement 1: the upright board.")
+        raise CalibrationFailure("Use somente a posição 1: tabuleiro vertical.")
     square = _valid_square(square_mm)
     direction = RIGHT_DIRECTION if right_direction is None else int(right_direction)
     if direction not in (-1, 1):
@@ -153,8 +187,9 @@ def start_capture(kind, placement, square_mm, right_direction=None):
                 "to start a new dataset, or enter the original measured size."
             )
         if kind == "laser":
-            camera = _load_json(CAMERA_FILE, {}) or {}
-            axis = _load_json(AXIS_FILE, {}) or {}
+            pending = _pending_geometry()
+            camera = pending["camera"] if pending else (_load_json(CAMERA_FILE, {}) or {})
+            axis = pending["axis"] if pending else (_load_json(AXIS_FILE, {}) or {})
             if not (camera.get("calibrated") and axis.get("calibrated")):
                 raise CalibrationFailure("Complete camera and rotation-axis calibration first.")
             if abs(float(camera.get("square_size_mm", 0)) - square) > 0.0001:
@@ -463,25 +498,22 @@ def _compute_worker(kind, release_gate=True):
             axis = compute_axis(by_placement, square, camera)
             axis["square_size_mm"] = square
             axis["steps_per_revolution"] = int(run["steps_per_revolution"])
-            # A new camera/axis profile changes the reference geometry.
-            # Never leave an old laser calibration marked READY after this.
-            _save_json(CAMERA_FILE, camera)
-            _save_json(AXIS_FILE, axis)
-            previous_laser = _load_json(LASER_FILE, {}) or {}
-            if previous_laser.get("calibrated"):
-                previous_laser["calibrated"] = False
-                previous_laser["invalidated_reason"] = (
-                    "Camera/axis calibration changed; recalibrate the laser plane."
-                )
-                _save_json(LASER_FILE, previous_laser)
+            # Do not overwrite a complete working calibration halfway through
+            # a recalibration. Activate all three profiles together after laser.
+            _save_json(RUN_DIR / "pending_geometry.json", {
+                "camera": camera, "axis": axis
+            })
+            run.setdefault("stages", {}).pop("laser1", None)
+            _save_json(RUN_FILE, run)
             _set_state(done=1, message=(
                 f"Camera calibrated (RMS {camera['rms_reprojection_px']:.2f} px); "
                 f"single-upright axis estimated (limited validation). Laser is next."
             ))
-            add_log("Camera and axis calibration saved.")
+            add_log("Camera and axis calibration prepared; awaiting laser.")
         else:
-            camera = _load_json(CAMERA_FILE, {}) or {}
-            axis = _load_json(AXIS_FILE, {}) or {}
+            pending = _pending_geometry()
+            camera = pending["camera"] if pending else (_load_json(CAMERA_FILE, {}) or {})
+            axis = pending["axis"] if pending else (_load_json(AXIS_FILE, {}) or {})
             if not (camera.get("calibrated") and axis.get("calibrated")):
                 raise CalibrationFailure("Calibrate camera and turntable before laser.")
             photos = []
@@ -509,7 +541,16 @@ def _compute_worker(kind, release_gate=True):
             laser["square_size_mm"] = square
             laser["single_orientation"] = True
             laser["limited_validation"] = True
-            _save_json(LASER_FILE, laser)
+            profiles = {LASER_FILE: laser}
+            if pending:
+                profiles = {
+                    CAMERA_FILE: camera,
+                    AXIS_FILE: axis,
+                    LASER_FILE: laser,
+                }
+            _publish_profiles(profiles)
+            if pending:
+                (RUN_DIR / "pending_geometry.json").unlink(missing_ok=True)
             _set_state(done=1, message=(
                 f"Laser calibrated with {laser['frames_used']} photos; "
                 f"plane RMS {laser['rms_plane_mm']:.2f} mm."
