@@ -2,7 +2,7 @@ name: Calibration geometry tests
 
 on:
   push:
-    branches: [chatgpt-version]
+    branches: [chatgpt-version, final-polish]
   workflow_dispatch:
 
 jobs:
@@ -34,4 +34,4 @@ jobs:
           node --check /tmp/scanner-dashboard.js
       - name: Test calibration geometry and Flask API
         run: |
-          python -m pytest tests/test_calibration_geometry.py tests/test_calibration_api.py tests/test_calibration_motor_flow.py tests/test_real_reconstruction.py -q
+          python -m pytest tests/test_calibration_geometry.py tests/test_calibration_api.py tests/test_calibration_motor_flow.py tests/test_real_reconstruction.py tests/test_session_management.py -q
