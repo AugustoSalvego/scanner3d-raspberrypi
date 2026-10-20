@@ -203,7 +203,7 @@ def stop_calibration():
         if not _current["running"]:
             return False
     _stop.set()
-    _set_state(message="Stop requested; releasing motor at the next half-step.")
+    _set_state(message="Parada solicitada. O motor será interrompido com segurança.")
     return True
 
 
@@ -235,7 +235,7 @@ def start_capture(kind, placement, square_mm, right_direction=None):
         _set_state(running=True, operation=f"capture_{kind}", placement=placement,
                    done=0, total=STOPS, board_found=0, error=None,
                    right_direction=direction,
-                   message=f"Checking the right visibility limit, then photographing left ({kind})...")
+                   message="Localizando o limite direito do tabuleiro antes das fotografias...")
         thread = threading.Thread(
             target=_capture_worker, args=(kind, placement, square, direction),
             name=f"calibration-{kind}-{placement}", daemon=True
@@ -342,7 +342,7 @@ def _capture_worker(kind, placement, square, right_direction=None):
             probe_count = int(MAX_SIDE_DEGREES // RIGHT_SEARCH_STEP_DEG)
             _set_state(
                 operation=f"search_right_{kind}", done=0, total=probe_count,
-                message="Searching RIGHT boundary. Motor + direction must be physically right.",
+                message="Procurando o limite direito do tabuleiro. Confira o sentido de rotação.",
             )
             for n in range(1, probe_count + 1):
                 if _stop.is_set():
@@ -357,9 +357,9 @@ def _capture_worker(kind, placement, square, right_direction=None):
                     missing += 1
                 _set_state(
                     done=n, total=probe_count,
-                    message=(f"RIGHT search {abs(target_angle):.0f} deg; "
-                             f"pattern {'found' if visible else 'missing'} "
-                             f"({missing}/{LOST_CONFIRMATIONS} consecutive misses)."),
+                    message=(f"À direita: {abs(target_angle):.0f}°; "
+                             f"tabuleiro {'visível' if visible else 'não encontrado'} "
+                             f"({missing}/{LOST_CONFIRMATIONS} leituras ausentes)."),
                 )
                 if missing >= LOST_CONFIRMATIONS:
                     break
@@ -374,7 +374,7 @@ def _capture_worker(kind, placement, square, right_direction=None):
             # 2. Return to center, verify the board was not lost mechanically.
             _set_state(
                 operation=f"return_center_{kind}", done=0, total=1,
-                message="Right limit located. Returning to the original front position...",
+                message="Limite direito encontrado. Retornando à posição inicial...",
             )
             frame = _capture_at(motor, 0)
             if find_board(frame) is None:
@@ -388,7 +388,7 @@ def _capture_worker(kind, placement, square, right_direction=None):
             # checks do not waste disk and do not count as valid photographs.
             _set_state(
                 operation=f"capture_{kind}", done=0, total=STOPS,
-                board_found=0, message="Center reached. Photographing toward LEFT...",
+                board_found=0, message="Posição inicial confirmada. Fotografando à esquerda...",
             )
             missing = 0
             last_left_visible_deg = 0.0
@@ -403,8 +403,8 @@ def _capture_worker(kind, placement, square, right_direction=None):
                 if corners is None:
                     missing += 1
                     _set_state(
-                        message=(f"LEFT: no board at {abs(left_angle):.0f} deg "
-                                 f"({missing}/{LOST_CONFIRMATIONS} consecutive misses)."),
+                        message=(f"Tabuleiro ausente à esquerda em {abs(left_angle):.0f}° "
+                                 f"({missing}/{LOST_CONFIRMATIONS} leituras ausentes)."),
                     )
                     if missing >= LOST_CONFIRMATIONS:
                         break
@@ -431,8 +431,8 @@ def _capture_worker(kind, placement, square, right_direction=None):
                 count = len(record["frames"])
                 _set_state(
                     done=count, board_found=count,
-                    message=(f"LEFT photographed {count}/{STOPS} useful images "
-                             f"(angle {abs(left_angle):.0f} deg)."),
+                    message=(f"{count}/{STOPS} fotografias válidas "
+                             f"(ângulo: {abs(left_angle):.0f}°)."),
                 )
 
             record["left_last_visible_deg"] = last_left_visible_deg
@@ -442,7 +442,7 @@ def _capture_worker(kind, placement, square, right_direction=None):
             if not _stop.is_set():
                 _set_state(
                     operation=f"return_center_{kind}",
-                    message="LEFT capture finished. Returning to front position...",
+                    message="Fotografias concluídas. Retornando à posição inicial...",
                 )
                 _capture_at(motor, 0)
 
@@ -464,7 +464,7 @@ def _capture_worker(kind, placement, square, right_direction=None):
     except Exception as error:
         record["status"] = "error"
         record["error"] = str(error)
-        _set_state(message=f"Calibration failed: {error}", error=str(error))
+        _set_state(message=f"Calibração não concluída: {error}", error=str(error))
         add_log(f"Calibration failed: {error}")
     finally:
         if run is not None:
@@ -489,7 +489,7 @@ def start_compute(kind):
     try:
         _set_state(running=True, operation=f"compute_{kind}", placement=None,
                    done=0, total=1, board_found=0, error=None,
-                   message=f"Computing {kind} calibration from saved photos...")
+                   message="Recalculando a calibração usando fotografias salvas...")
         thread = threading.Thread(
             target=_compute_worker, args=(kind,), daemon=True
         )
@@ -616,6 +616,6 @@ def reset_photos():
             import shutil
             shutil.rmtree(RUN_DIR)
         _set_state(running=False, done=0, total=0, error=None,
-                   message="Calibration photographs reset. Saved profiles remain on disk.")
+                   message="Fotografias temporárias removidas. Perfis de calibração salvos preservados.")
     finally:
         hardware_gate.release()
