@@ -238,9 +238,26 @@ def rotate_back_and_filter(points, degrees, origin, direction, radial_limit_mm=9
     return centered @ rotation.T
 
 
-def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0):
+def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=None):
+    """Reconstruct one completed physical session (or the most recent one)."""
     camera, axis, laser = load_calibration()
-    folder, meta = find_recent_real_session()
+    if session_id is None:
+        folder, meta = find_recent_real_session()
+    else:
+        # Session identifiers originate from local session creation. Reject
+        # unexpected path elements even when called from another Python module.
+        if (not isinstance(session_id, str) or
+                not session_id.startswith("scan_") or
+                not session_id.replace("_", "").replace("-", "").isalnum()):
+            raise ReconstructionError("Invalid scan session identifier.")
+        folder = SCANS_DIR / session_id
+        meta = _load_json(folder / "metadata.json")
+        positions = meta.get("capture_positions") or []
+        if (meta.get("status") != "finished" or len(positions) < 8 or
+                not all(p.get("physical") is True for p in positions)):
+            raise ReconstructionError(
+                "Requested session is not a completed physical scan with enough photos."
+            )
     K = np.asarray(camera["camera_matrix"], dtype=np.float64)
     dist = np.asarray(camera["distortion_coefficients"], dtype=np.float64)
     origin = np.asarray(axis["axis_origin_camera_mm"], dtype=np.float64)
