@@ -356,11 +356,11 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0, session_id=
         raise ReconstructionError("Reconstructed size is implausible; review calibration.")
 
     POINT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = POINT_DIR / f"real_{folder.name}.ply"
+    out_path = POINT_DIR / f"cloud_{folder.name}.ply"
     tmp_path = out_path.with_suffix(".ply.tmp")
     with tmp_path.open("w", encoding="utf-8") as f:
         f.write("ply\nformat ascii 1.0\n")
-        f.write("comment REAL scanner capture, camera/laser triangulation, mm\n")
+        f.write("comment Laser-triangulated point cloud, millimetres\n")
         f.write(f"element vertex {len(xyz)}\n")
         f.write(
             "property float x\nproperty float y\nproperty float z\n"
