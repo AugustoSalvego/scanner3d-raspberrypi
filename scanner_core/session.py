@@ -1,10 +1,12 @@
 import json
 import os
+import shutil
 import tempfile
 import uuid
 from datetime import datetime
+from pathlib import Path
 
-from scanner_core.config import SCANS_FOLDER
+from scanner_core.config import SCANS_FOLDER, POINT_CLOUD_FOLDER
 from scanner_core.logger import add_log
 
 
@@ -237,3 +239,64 @@ def list_scan_sessions():
     )
 
     return sessions
+
+def session_directory(session_id):
+    """Only accept real child session directories, never symlinks or traversal."""
+    if (not isinstance(session_id, str) or not session_id.startswith("scan_")
+            or not session_id.replace("_", "").replace("-", "").isalnum()):
+        raise ValueError("Identificador de escaneamento inválido.")
+    root = Path(SCANS_FOLDER).resolve()
+    path = root / session_id
+    if path.is_symlink() or not path.is_dir() or path.resolve().parent != root:
+        raise FileNotFoundError("Escaneamento não encontrado.")
+    return path
+
+
+def read_scan_session(session_id):
+    directory = session_directory(session_id)
+    data = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("session_id", session_id) != session_id:
+        raise ValueError("Metadados de escaneamento incompatíveis.")
+    return data
+
+
+def rename_scan_session(session_id, name):
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
+        raise ValueError("Nome deve conter de 1 a 80 caracteres.")
+    if any(ord(c) < 32 for c in name):
+        raise ValueError("O nome contém caracteres de controle.")
+    directory = session_directory(session_id)
+    meta = read_scan_session(session_id)
+    meta["display_name"] = name.strip()
+    save_metadata(str(directory), meta)
+    return meta
+
+
+def get_session_ply(session_id):
+    """Resolve only a PLY owned by a given scan, including older sessions."""
+    directory = session_directory(session_id)
+    meta = read_scan_session(session_id)
+    entries = meta.get("point_clouds") or []
+    candidates = [
+        directory / "point_clouds" / f for f in entries
+        if isinstance(f, str) and f.endswith(".ply")
+        and Path(f).name == f
+    ]
+    expected = f"real_{session_id}.ply"
+    if expected in entries or (Path(POINT_CLOUD_FOLDER) / expected).is_file():
+        candidates.append(Path(POINT_CLOUD_FOLDER) / expected)
+    for path in candidates:
+        if not path.is_symlink() and path.is_file():
+            parent = path.parent.resolve()
+            if parent in (directory / "point_clouds", Path(POINT_CLOUD_FOLDER).resolve()):
+                return path
+    raise FileNotFoundError("PLY deste escaneamento ainda não está disponível.")
+
+
+def delete_scan_session(session_id):
+    directory = session_directory(session_id)
+    # Never delete an unrelated PLY based on untrusted metadata entries.
+    root_ply = Path(POINT_CLOUD_FOLDER) / f"real_{session_id}.ply"
+    if root_ply.is_file() and not root_ply.is_symlink():
+        root_ply.unlink()
+    shutil.rmtree(directory)
