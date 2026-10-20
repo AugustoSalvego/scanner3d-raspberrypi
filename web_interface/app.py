@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 
 import glob
 import os
+from pathlib import Path
 import threading
 import time
 
@@ -30,7 +31,10 @@ from scanner_core.runtime_settings import toggle_simulation_mode
 from scanner_core.runtime_settings import update_settings
 from scanner_core.state import scanner_state
 from scanner_core.status import get_status
-from scanner_core.session import list_scan_sessions, set_reconstruction_status
+from scanner_core.session import (
+    list_scan_sessions, set_reconstruction_status, rename_scan_session,
+    delete_scan_session, get_session_ply,
+)
 from web_interface.api_response import api_success
 from web_interface.api_response import api_error
 from scanner_core.calibration import get_calibration_status
@@ -682,6 +686,69 @@ def scan_sessions():
         },
         sessions=sessions
     )
+
+@app.route("/api/sessions", methods=["GET"])
+def session_collection():
+    items = []
+    for meta in list_scan_sessions():
+        entry = dict(meta)
+        ident = entry.get("session_id")
+        entry["ply_available"] = False
+        if ident:
+            try:
+                get_session_ply(ident)
+                entry["ply_available"] = True
+            except (ValueError, OSError):
+                pass
+        items.append(entry)
+    return api_success("Sessões disponíveis.", data={"sessions": items})
+
+
+@app.route("/api/sessions/<session_id>/ply", methods=["GET"])
+def session_ply(session_id):
+    try:
+        file = get_session_ply(session_id)
+    except ValueError as error:
+        return api_error(str(error), status_code=400)
+    except (OSError, FileNotFoundError):
+        return api_error("Arquivo PLY indisponível.", status_code=404)
+    return send_from_directory(
+        str(file.parent), file.name,
+        as_attachment=request.args.get("download") == "1",
+        mimetype="application/octet-stream"
+    )
+
+
+@app.route("/api/sessions/<session_id>/rename", methods=["POST"])
+def rename_session(session_id):
+    if hardware_gate.locked():
+        return api_error("Aguarde a conclusão da operação atual.", status_code=409)
+    payload = request.get_json(silent=True) or {}
+    try:
+        metadata = rename_scan_session(session_id, payload.get("name"))
+        return api_success("Escaneamento renomeado.", data={"session": metadata})
+    except ValueError as error:
+        return api_error(str(error), status_code=400)
+    except FileNotFoundError:
+        return api_error("Escaneamento não encontrado.", status_code=404)
+    except (OSError, TypeError) as error:
+        return api_error(str(error), status_code=500)
+
+
+@app.route("/api/sessions/<session_id>", methods=["DELETE"])
+def delete_session(session_id):
+    if hardware_gate.locked():
+        return api_error("Aguarde a conclusão da operação atual.", status_code=409)
+    try:
+        delete_scan_session(session_id)
+        return api_success("Escaneamento excluído.")
+    except ValueError as error:
+        return api_error(str(error), status_code=400)
+    except FileNotFoundError:
+        return api_error("Escaneamento não encontrado.", status_code=404)
+    except OSError as error:
+        return api_error(str(error), status_code=500)
+
 
 @app.route("/calibration/status")
 def calibration_status():
