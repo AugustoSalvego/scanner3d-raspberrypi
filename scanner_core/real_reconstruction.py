@@ -1,4 +1,4 @@
-"""First real reconstruction: laser triangulation + turntable de-rotation.
+"""Calibrated laser triangulation and turntable de-rotation.
 
 This module NEVER synthesizes example geometry. It reads real camera captures,
 calibration files and commanded motor angles to generate an ASCII PLY point cloud.
@@ -64,41 +64,145 @@ def find_recent_real_session():
     )
 
 
-def stripe_pixels(frame):
-    """Find center of a saturated red line for each alternate image row.
+def stripe_pixels(frame, camera_geometry=None, radial_limit_mm=90.0):
+    """Locate actual laser-line centers, even on cyan-lit/low-red surfaces.
 
-    Only suitable for a pale, non-red, non-reflective target. Red backgrounds
-    may be misidentified; geometric limits filter those after triangulation.
+    A saturated-red HSV mask can reject real laser measurements if green and
+    blue illumination remain strong. Instead, locate narrow red-channel peaks,
+    group them into continuous traces, and, when calibrated geometry is given,
+    prefer traces geometrically close to the turntable axis.
+
+    The selection does not rely on any fixed image-coordinate object region.
+    It is nevertheless a heuristic: calibration and a visible laser line are
+    still required for reliable scanning.
     """
-    h, w = frame.shape[:2]
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    b, g, r = cv2.split(frame)
-    red = r.astype(np.int16)
-    stronger = (red > g.astype(np.int16) + 35) & (red > b.astype(np.int16) + 35)
-    hue = ((hsv[:, :, 0] <= 13) | (hsv[:, :, 0] >= 165))
-    candidate = hue & (hsv[:, :, 1] >= 85) & (hsv[:, :, 2] >= 100) & stronger
-    pts = []
-    # Subsample for performance on the Raspberry Pi 3.
-    for y in range(max(2, h // 30), h - max(2, h // 30), 2):
-        xs = np.flatnonzero(candidate[y])
+    height, width = frame.shape[:2]
+    red = frame[:, :, 2].astype(np.int16)
+    threshold = max(25.0, min(60.0, float(np.percentile(red, 99.5)) * 0.7))
+    background = max(10.0, threshold - 10.0)
+    candidates = []
+
+    for y in range(2, height - 2):
+        row = red[y]
+        xs = np.flatnonzero(row > threshold)
         if len(xs) < 2:
             continue
-        # Accept broad stripes on cheap webcams (up to 90 px) while
-        # refining the center around the brightest 15-pixel neighborhood.
-        cuts = np.where(np.diff(xs) > 1)[0] + 1
-        groups = np.split(xs, cuts)
-        groups = [part for part in groups if 2 <= len(part) <= 90]
-        if not groups:
-            continue
-        group = max(groups, key=lambda a: float(np.max(red[y, a])))
-        peak = int(group[np.argmax(red[y, group])])
-        center_part = group[np.abs(group - peak) <= 7]
-        if len(center_part) < 2:
-            continue
-        weights = np.maximum(red[y, center_part].astype(float) - 90.0, 1.0)
-        x = float(np.average(center_part, weights=weights))
-        pts.append((x, float(y)))
-    return np.asarray(pts, dtype=np.float64).reshape(-1, 2)
+        groups = np.split(xs, np.flatnonzero(np.diff(xs) > 2) + 1)
+        for group in groups:
+            if len(group) < 2 or not 1 <= group[-1] - group[0] <= max(35, width // 25):
+                continue
+            strength = float(np.maximum(row[group] - background, 0).sum())
+            if strength < max(50.0, threshold * 1.5):
+                continue
+            weights = np.maximum(
+                row[group].astype(float) - background, 1.0
+            ) ** 1.2
+            candidates.append((
+                float(np.average(group, weights=weights)), float(y)
+            ))
+
+    pixels = np.asarray(candidates, dtype=np.float64).reshape(-1, 2)
+    if not len(pixels):
+        return pixels
+
+    radii = None
+    if camera_geometry is not None:
+        K, dist, normal, offset, origin, direction = camera_geometry
+        undistorted = cv2.undistortPoints(
+            pixels.reshape(-1, 1, 2), K, dist
+        ).reshape(-1, 2)
+        rays = np.column_stack((undistorted, np.ones(len(undistorted))))
+        denominator = rays @ normal
+        good = np.abs(denominator) > 1e-7
+        depths = np.zeros(len(pixels), dtype=np.float64)
+        depths[good] = -offset / denominator[good]
+        good &= (depths > 10.0) & (depths < 2500.0)
+        points = rays * depths[:, None]
+        relative = points - origin
+        axial = relative @ direction
+        radial_vectors = relative - axial[:, None] * direction
+        radii = np.linalg.norm(radial_vectors, axis=1)
+        good &= (
+            (radii <= radial_limit_mm) &
+            (axial >= -150.0) & (axial <= 150.0)
+        )
+        pixels, radii = pixels[good], radii[good]
+        if not len(pixels):
+            return pixels
+
+    # Trace neighboring subpixel peaks, keeping actual measured positions.
+    # This rejects isolated red reflections without inventing missing points.
+    tracks = []
+    recent = []
+    for index, (x, y) in enumerate(pixels):
+        near = [
+            (prev, track_id) for prev, track_id in recent
+            if (0 < y - pixels[prev, 1] <= 3.0 and
+                abs(x - pixels[prev, 0]) <= 16.0)
+        ]
+        if near:
+            _, track_id = min(
+                near, key=lambda item: abs(pixels[item[0], 0] - x)
+            )
+            tracks[track_id].append(index)
+        else:
+            track_id = len(tracks)
+            tracks.append([index])
+        recent = [
+            (prev, tid) for prev, tid in recent
+            if y - pixels[prev, 1] <= 3.0
+        ]
+        recent.append((index, track_id))
+
+    min_length = max(6, height // 45)
+    eligible = [
+        np.asarray(track, dtype=np.int64)
+        for track in tracks if len(track) >= min_length
+    ]
+    if not eligible:
+        return np.empty((0, 2), dtype=np.float64)
+    if radii is None:
+        return pixels[max(eligible, key=len)]
+
+    scored = [
+        (len(track) / (float(np.median(radii[track])) + 10.0) ** 1.3, track)
+        for track in eligible
+    ]
+    max_score = max(score for score, _ in scored)
+    selected = [
+        track for score, track in scored if score >= 0.25 * max_score
+    ]
+    return pixels[np.sort(np.concatenate(selected))]
+
+
+def exclude_flat_support(pixels, points_camera, origin, direction):
+    """Remove a visible flat platform trace without a hardcoded pixel ROI.
+
+    The end of a vertical laser trace may continue across the turntable as a
+    nearly constant axial height while its radius grows. Detect that shape;
+    otherwise leave the input unchanged instead of guessing a base height.
+    """
+    if len(pixels) < 36 or len(pixels) != len(points_camera):
+        return points_camera
+    relative = points_camera - origin
+    axial = relative @ direction
+    radial = np.linalg.norm(
+        relative - axial[:, None] * direction, axis=1
+    )
+    ordered = np.argsort(pixels[:, 1])
+    size = max(12, len(ordered) // 15)
+    tail, front = ordered[-size:], ordered[:size]
+    plane = float(np.median(axial[tail]))
+    first_height = float(np.median(axial[front]))
+    if not (
+        float(np.std(axial[tail])) < 0.6 and
+        float(np.ptp(radial[tail])) >= 5.0 and
+        abs(plane - first_height) >= 4.0
+    ):
+        return points_camera
+    if first_height < plane:
+        return points_camera[axial < plane - 1.5]
+    return points_camera[axial > plane + 1.5]
 
 
 def project_laser_points(pixels, K, dist, plane_normal, plane_offset):
@@ -177,8 +281,14 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0):
             raise ReconstructionError(
                 f"Camera resolution changed at {filename}; calibration no longer applies."
             )
-        pixels = stripe_pixels(frame)
+        pixels = stripe_pixels(
+            frame, camera_geometry=(K, dist, normal, offset, origin, direction),
+            radial_limit_mm=radial_limit_mm,
+        )
         points_camera = project_laser_points(pixels, K, dist, normal, offset)
+        points_camera = exclude_flat_support(
+            pixels, points_camera, origin, direction
+        )
         points_local = rotate_back_and_filter(
             points_camera, float(position["angle_deg"]), origin,
             direction, radial_limit_mm=radial_limit_mm,
@@ -196,7 +306,7 @@ def reconstruct_latest(progress_callback=None, radial_limit_mm=90.0):
         )
     cloud = np.concatenate(all_points)
     # Use a lightweight voxel filter to reduce duplicate/noisy points.
-    bins = np.rint(cloud / 0.6).astype(np.int64)
+    bins = np.rint(cloud / 0.4).astype(np.int64)
     _, indices = np.unique(bins, axis=0, return_index=True)
     cloud = cloud[np.sort(indices)]
     # Express in consistent output axes (Z = rotation axis).
