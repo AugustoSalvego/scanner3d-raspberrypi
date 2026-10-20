@@ -118,6 +118,40 @@ def _valid_square(value):
     return square
 
 
+def _profile_is_valid(kind, data):
+    """Only report a calibration as available when geometry is actually saved."""
+    if not isinstance(data, dict) or data.get("calibrated") is not True:
+        return False
+    try:
+        if kind == "camera":
+            matrix = np.asarray(data["camera_matrix"], dtype=float)
+            distortion = np.asarray(data["distortion_coefficients"], dtype=float)
+            image_size = np.asarray(data["image_size"], dtype=float)
+            arrays = (matrix, distortion, image_size)
+            shapes_ok = (
+                matrix.shape == (3, 3) and distortion.size >= 4
+                and image_size.shape == (2,) and np.all(image_size > 0)
+            )
+        elif kind == "turntable":
+            origin = np.asarray(data["axis_origin_camera_mm"], dtype=float)
+            direction = np.asarray(data["axis_direction_camera"], dtype=float)
+            arrays = (origin, direction)
+            shapes_ok = (
+                origin.shape == (3,) and direction.shape == (3,)
+                and np.linalg.norm(direction) > 0.1
+            )
+        elif kind == "laser":
+            normal = np.asarray(data["plane_normal_camera"], dtype=float)
+            offset = np.asarray(data["plane_offset_mm"], dtype=float)
+            arrays = (normal, offset)
+            shapes_ok = normal.shape == (3,) and np.linalg.norm(normal) > 0.1
+        else:
+            return False
+        return bool(shapes_ok and all(np.all(np.isfinite(a)) for a in arrays))
+    except (KeyError, ValueError, TypeError):
+        return False
+
+
 def calibration_status():
     with _state_lock:
         state = _current.copy()
@@ -138,7 +172,10 @@ def calibration_status():
     for kind, path in (("camera", CAMERA_FILE), ("turntable", AXIS_FILE),
                        ("laser", LASER_FILE)):
         data = _load_json(path, {}) or {}
-        profiles[kind] = {"calibrated": bool(data.get("calibrated")), "profile": data}
+        profiles[kind] = {
+            "calibrated": _profile_is_valid(kind, data),
+            "profile": data,
+        }
     return {
         "run": state,
         "square_size_mm": run.get("square_size_mm"),
@@ -414,8 +451,8 @@ def _capture_worker(kind, placement, square, right_direction=None):
         count = len(record["frames"])
         _set_state(
             operation=f"compute_{kind}", done=0, total=1,
-            message=(f"Saved {count} sharp, recognized photos. "
-                     f"Computing {kind} calibration now..."),
+            message=(f"{count} fotografias válidas salvas. "
+                     "Calculando os parâmetros de calibração..."),
         )
         # Capture and numerical calibration share one user action.
         _compute_worker(kind, release_gate=False)
@@ -505,9 +542,11 @@ def _compute_worker(kind, release_gate=True):
             })
             run.setdefault("stages", {}).pop("laser1", None)
             _save_json(RUN_FILE, run)
-            _set_state(done=1, message=(
-                f"Camera calibrated (RMS {camera['rms_reprojection_px']:.2f} px); "
-                f"single-upright axis estimated (limited validation). Laser is next."
+            _set_state(done=1, total=1, error=None, message=(
+                "Pronto! Câmera e eixo calculados com sucesso "
+                f"(erro RMS: {camera['rms_reprojection_px']:.2f} px). "
+                "Os novos parâmetros estão preparados. Agora calibre o laser "
+                "para ativar o conjunto completo."
             ))
             add_log("Camera and axis calibration prepared; awaiting laser.")
         else:
@@ -551,13 +590,15 @@ def _compute_worker(kind, release_gate=True):
             _publish_profiles(profiles)
             if pending:
                 (RUN_DIR / "pending_geometry.json").unlink(missing_ok=True)
-            _set_state(done=1, message=(
-                f"Laser calibrated with {laser['frames_used']} photos; "
-                f"plane RMS {laser['rms_plane_mm']:.2f} mm."
+            _set_state(done=1, total=1, error=None, message=(
+                "Pronto! Calibração do laser concluída com sucesso "
+                f"({laser['frames_used']} imagens; erro RMS: "
+                f"{laser['rms_plane_mm']:.2f} mm). "
+                "Os parâmetros estão salvos e disponíveis para escanear."
             ))
             add_log("Laser plane calibration saved.")
     except Exception as error:
-        _set_state(error=str(error), message=f"Calibration rejected: {error}")
+        _set_state(error=str(error), message=f"Calibração não concluída: {error}")
         add_log(f"Calibration rejected: {error}")
     finally:
         if release_gate:
