@@ -88,10 +88,10 @@ def test_ply_preview_and_download_from_relative_output_directory(monkeypatch, tm
     clouds = Path("outputs/point_clouds")
     clouds.mkdir(parents=True)
     payload = (
-        b"ply\\nformat ascii 1.0\\nelement vertex 1\\n"
-        b"property float x\\nproperty float y\\nproperty float z\\n"
-        b"end_header\\n0 0 0\\n"
-    ).replace(b"\\\\n", b"\\n")
+        b"ply\nformat ascii 1.0\nelement vertex 1\n"
+        b"property float x\nproperty float y\nproperty float z\n"
+        b"end_header\n0 0 0\n"
+    )
     filename = "cloud_" + identifier + ".ply"
     (clouds / filename).write_bytes(payload)
     session.set_reconstruction_status(identifier, "finished", filename=filename)
