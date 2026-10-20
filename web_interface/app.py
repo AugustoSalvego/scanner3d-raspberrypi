@@ -30,7 +30,7 @@ from scanner_core.runtime_settings import toggle_simulation_mode
 from scanner_core.runtime_settings import update_settings
 from scanner_core.state import scanner_state
 from scanner_core.status import get_status
-from scanner_core.session import list_scan_sessions
+from scanner_core.session import list_scan_sessions, set_reconstruction_status
 from web_interface.api_response import api_success
 from web_interface.api_response import api_error
 from scanner_core.calibration import get_calibration_status
@@ -294,8 +294,19 @@ _scan_start_lock = threading.Lock()
 
 
 def _run_scan_exclusive():
+    """Keep the hardware gate until capture AND reconstruction have finished."""
     try:
-        execute_scan()
+        outcome = execute_scan()
+        if (outcome and outcome["status"] == "finished" and
+                not outcome["simulation"] and outcome["session"]):
+            session_id = outcome["session"]
+            with _reconstruction_state_lock:
+                _reconstruction_state.update({
+                    "running": True, "done": 0, "total": 0,
+                    "error": None, "result": None,
+                    "message": "Photographs captured; reconstructing automatically...",
+                })
+            _reconstruction_worker(session_id=session_id, release_gate=False)
     finally:
         hardware_gate.release()
         _scan_start_lock.release()
@@ -797,29 +808,45 @@ def _reconstruction_progress(done, total):
         })
 
 
-def _reconstruction_worker():
+def _reconstruction_worker(session_id=None, release_gate=True):
+    """Use the same real algorithm for automatic and manual reconstruction."""
     try:
-        result = reconstruct_latest(progress_callback=_reconstruction_progress)
+        if session_id:
+            set_reconstruction_status(session_id, "running")
+        result = reconstruct_latest(
+            progress_callback=_reconstruction_progress,
+            session_id=session_id,
+        )
+        set_reconstruction_status(
+            result["session"], "finished", filename=result["file"]
+        )
         with _reconstruction_state_lock:
             _reconstruction_state["result"] = result
             _reconstruction_state["message"] = (
-                f"REAL point cloud generated: {result['points']} points from "
+                f"PLY generated: {result['points']} points from "
                 f"{result['usable_frames']} physical images."
             )
         scanner_state["point_cloud_generated"] = True
         scanner_state["last_point_cloud"] = os.path.join(
             POINT_CLOUD_FOLDER, result["file"]
         )
-        add_log(f"REAL PLY generated: {result['file']}")
+        add_log(f"PLY generated: {result['file']}")
     except Exception as error:
+        scanner_state["last_error"] = str(error)
+        if session_id:
+            try:
+                set_reconstruction_status(session_id, "error", error=error)
+            except Exception as state_error:
+                add_log(f"Could not save reconstruction error status: {state_error}")
         with _reconstruction_state_lock:
             _reconstruction_state["error"] = str(error)
-            _reconstruction_state["message"] = f"Real reconstruction failed: {error}"
-        add_log(f"Real reconstruction rejected: {error}")
+            _reconstruction_state["message"] = f"Reconstruction failed: {error}"
+        add_log(f"Reconstruction failed: {error}")
     finally:
         with _reconstruction_state_lock:
             _reconstruction_state["running"] = False
-        hardware_gate.release()
+        if release_gate:
+            hardware_gate.release()
 
 
 @app.route("/api/reconstruction/start", methods=["POST"])
@@ -830,13 +857,16 @@ def reconstruct_real_scan():
         # Reject invalid/missing inputs before launching the expensive job.
         from scanner_core.real_reconstruction import load_calibration, find_recent_real_session
         load_calibration()
-        find_recent_real_session()
+        selected_folder, _ = find_recent_real_session()
         with _reconstruction_state_lock:
             _reconstruction_state.update({
                 "running": True, "done": 0, "total": 0, "error": None,
                 "result": None, "message": "Loading real physical captures...",
             })
-        thread = threading.Thread(target=_reconstruction_worker, daemon=True)
+        thread = threading.Thread(
+            target=_reconstruction_worker,
+            kwargs={"session_id": selected_folder.name}, daemon=True
+        )
         thread.start()
         return api_success("Real reconstruction started.")
     except ReconstructionError as error:
