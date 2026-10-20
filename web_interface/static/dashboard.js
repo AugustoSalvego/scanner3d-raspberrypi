@@ -329,27 +329,95 @@
       $("scan-start").disabled=true;
     }
   }
+  function calibrationBadge(id, label, type="pending") {
+    const element=$(id);
+    element.textContent=label;
+    element.className="cal-state is-"+type;
+  }
+  function calibrationFeedback(type,title,message,progress=0) {
+    $("cal-feedback").dataset.state=type;
+    $("cal-feedback-symbol").textContent=({
+      running:"↻", success:"✓", error:"!", prepared:"→", idle:"○"
+    })[type]||"○";
+    $("cal-feedback-title").textContent=title;
+    $("cal-status").textContent=message;
+    const percentage=Math.round(Math.max(0,Math.min(100,progress)));
+    $("cal-progress").style.width=percentage+"%";
+    $("cal-progress-track").setAttribute("aria-valuenow",String(percentage));
+  }
   async function refreshCalibration(){
     try{
       const data=await api("/api/calibration/workflow");
       state.calibration=data;
-      const profiles=data.profiles||{},run=data.run||{};
-      const cam=profiles.camera?.calibrated && profiles.turntable?.calibrated;
-      const laser=profiles.laser?.calibrated;
-      $("cal-camera-state").textContent=cam?"Calibrado":"Pendente";
-      $("cal-laser-state").textContent=laser?"Calibrado":"Pendente";
-      $("calibration-chip").textContent=cam&&laser?"Calibração disponível":"Calibração incompleta";
-      $("cal-status").textContent=(data.pending_recalibration ? "Nova geometria preparada; conclua o plano do laser para ativá-la. " : "") + (run.message||"Aguardando operação.");
-      $("cal-progress").style.width=run.total>0?(100*run.done/run.total)+"%":"0%";
-      for(const id of ["cal-camera-capture","cal-camera-compute","cal-laser-capture","cal-laser-compute"]){
-        $(id).disabled=!!run.running||!!state.scan.running||!!state.reconstruction.running;
-      }
-      $("cal-stop").disabled=!run.running;
-      $("cal-reset-photos").disabled=!!run.running||!!state.scan.running||!!state.reconstruction.running;
-    }catch(error){$("cal-status").textContent=error.message;}
+      const profiles=data.profiles||{},run=data.run||{},stages=data.stages||{};
+      const cam=Boolean(profiles.camera?.calibrated&&profiles.turntable?.calibrated);
+      const laser=Boolean(profiles.laser?.calibrated);
+      const pending=Boolean(data.pending_recalibration);
+      const operation=String(run.operation||"");
+      const cameraActive=Boolean(run.running&&operation.endsWith("_camera"));
+      const laserActive=Boolean(run.running&&operation.endsWith("_laser"));
+      const completed=(!run.running&&!run.error&&String(run.message||"").startsWith("Pronto!"));
+      if(cameraActive)calibrationBadge("cal-camera-state","Em andamento","running");
+      else if(pending)calibrationBadge("cal-camera-state","Calculado · aguarda laser","complete");
+      else if(cam)calibrationBadge("cal-camera-state",completed&&operation==="compute_laser"?"Calibrado":"Perfil salvo","complete");
+      else if(run.error&&operation.endsWith("_camera"))calibrationBadge("cal-camera-state","Falha","error");
+      else calibrationBadge("cal-camera-state","Pendente","pending");
+      if(laserActive)calibrationBadge("cal-laser-state","Em andamento","running");
+      else if(pending)calibrationBadge("cal-laser-state","Nova calibração pendente","prepared");
+      else if(laser)calibrationBadge("cal-laser-state",completed&&operation==="compute_laser"?"Calibrado":"Perfil salvo","complete");
+      else if(run.error&&operation.endsWith("_laser"))calibrationBadge("cal-laser-state","Falha","error");
+      else calibrationBadge("cal-laser-state","Pendente","pending");
+      $("calibration-chip").textContent=pending?"Aguardando laser":cam&&laser?"Calibração disponível":"Calibração incompleta";
+      const inProgress=Boolean(run.running);
+      const percent=Number(run.total)>0?100*(Number(run.done)||0)/Number(run.total):0;
+      const text=String(run.message||"");
+      if(inProgress)calibrationFeedback(
+        "running","Calibração em andamento",text||"Aguarde a finalização da etapa.",percent
+      );
+      else if(run.error)calibrationFeedback(
+        "error","Calibração não concluída",
+        String(run.error)+(cam&&laser?" O perfil válido anterior continua salvo.":""),
+        0
+      );
+      else if(completed&&pending)calibrationFeedback(
+        "prepared","Câmera e eixo concluídos",
+        text,100
+      );
+      else if(completed)calibrationFeedback(
+        "success","Pronto! Calibração concluída",text,100
+      );
+      else if(pending)calibrationFeedback(
+        "prepared","Aguardando calibração do laser",
+        "Os novos parâmetros da câmera e do eixo foram calculados. Calibre o laser para ativar o conjunto completo.",
+        0
+      );
+      else if(cam&&laser)calibrationFeedback(
+        "success","Pronto! Perfil de calibração salvo",
+        "Há uma calibração válida salva no equipamento. Você pode reutilizá-la sem calibrar novamente.",
+        100
+      );
+      else calibrationFeedback(
+        "idle","Aguardando calibração",
+        "Confira a iluminação, posicione o tabuleiro e inicie a primeira etapa.",
+        0
+      );
+      const busy=inProgress||!!state.scan.running||!!state.reconstruction.running;
+      $("cal-camera-capture").disabled=busy;
+      $("cal-laser-capture").disabled=busy||(!cam&&!pending);
+      // Recalculation is for recovery from saved photographs; no second
+      // button press is needed in the normal automatic calibration flow.
+      $("cal-camera-compute").disabled=busy||Number(stages.camera1?.board_found||0)<8;
+      $("cal-laser-compute").disabled=busy||Number(stages.laser1?.board_found||0)<1||(!cam&&!pending);
+      $("cal-stop").disabled=!inProgress;
+      $("cal-reset-photos").disabled=busy;
+    }catch(error){
+      calibrationBadge("cal-camera-state","Indisponível","error");
+      calibrationBadge("cal-laser-state","Indisponível","error");
+      calibrationFeedback("error","Não foi possível consultar a calibração",error.message,0);
+    }
   }
   async function calibrationCommand(path,body){
-    try{const r=await post(path,body);notice(r.message||"Operação iniciada.","success");await refreshCalibration();}
+    try{await post(path,body);notice(path.endsWith("/stop")?"Parada da calibração solicitada.":"Procedimento iniciado. Aguarde o resultado no painel.");await refreshCalibration();}
     catch(error){notice(error.message,"error");}
   }
   function bind(){
