@@ -89,7 +89,7 @@ def test_real_pipeline_consumes_photos_and_writes_ply(tmp_path, monkeypatch):
     assert result["usable_frames"] == 10
     assert (clouds / result["file"]).is_file()
     header = (clouds / result["file"]).read_text().split("end_header")[0]
-    assert "comment REAL scanner capture" in header
+    assert "comment Laser-triangulated point cloud" in header
     assert f"element vertex {result['points']}" in header
 
 
