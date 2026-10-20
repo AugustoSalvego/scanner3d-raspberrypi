@@ -50,7 +50,7 @@ from scanner_core.hardware_gate import hardware_gate
 from scanner_core.calibration_workflow import RUN_DIR as CALIB_RUN_DIR
 from flask import send_file
 from scanner_core.calibration_geometry import CalibrationFailure, find_board
-from scanner_core.real_reconstruction import reconstruct_latest, ReconstructionError
+from scanner_core.reconstruction import reconstruct_latest, ReconstructionError
 import cv2
 from scanner_core.viewer import get_viewer_status
 from scanner_core.laser_detection import analyze_laser_frame
@@ -326,7 +326,7 @@ def start_scan():
 
     try:
         if not get_settings()["simulation_mode"]:
-            from scanner_core.real_reconstruction import load_calibration
+            from scanner_core.reconstruction import load_calibration
             load_calibration()
         with _reconstruction_state_lock:
             _reconstruction_state.update({
@@ -935,7 +935,7 @@ def reconstruct_real_scan():
         return api_error("Wait for scan/calibration to finish.", status_code=409)
     try:
         # Reject invalid/missing inputs before launching the expensive job.
-        from scanner_core.real_reconstruction import load_calibration, find_recent_real_session
+        from scanner_core.reconstruction import load_calibration, find_recent_real_session
         load_calibration()
         selected_folder, _ = find_recent_real_session()
         with _reconstruction_state_lock:
