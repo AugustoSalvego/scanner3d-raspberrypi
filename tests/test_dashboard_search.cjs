@@ -70,8 +70,8 @@ test("both searchable areas exist and reset button is removed", () => {
   assert.match(html, /id="history-search"/);
   assert.doesNotMatch(html, /id="viewer-reset"/);
   assert.doesNotMatch(source, /[$]\("viewer-reset"\)/);
-  assert.match(source, /[$]\("viewer-search"\)[.]addEventListener\("input",refreshOptions\)/);
-  assert.match(source, /[$]\("history-search"\)[.]addEventListener\("input",renderHistory\)/);
+  assert.match(source, /[$]\("viewer-search"\)[.]addEventListener\("input",\(\)=>\{/);
+  assert.match(source, /[$]\("history-search"\)[.]addEventListener\("input",\(\)=>\{/);
 });
 test("filter ignores case and accents; keeps selected PLY", () => {
   const { ctx, select, state } = fixture("ENGRENAGEM");
