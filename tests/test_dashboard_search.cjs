@@ -95,3 +95,100 @@ test("empty search shows only completed PLYs and current scan", () => {
   vm.runInContext("refreshOptions()", ctx);
   assert.deepEqual(select.options.map(x=>x.value), ["current", "scan_duck", "scan_gear", "scan_part"]);
 });
+
+
+test("search box has visible custom X controls and accessible suggestions", () => {
+  assert.match(html, /id="viewer-clear"[^>]+aria-label="Limpar pesquisa de modelos"/);
+  assert.match(html, /id="history-clear"[^>]+aria-label="Limpar pesquisa do histórico"/);
+  assert.match(html, /id="viewer-suggestions"[^>]+role="listbox"/);
+  assert.match(html, /id="viewer-search"[^>]+role="combobox"/);
+  assert.match(css, /[.]search-clear\[hidden\],[.]search-suggestions\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/);
+  assert.match(source, /[$]\("viewer-clear"\)[.]addEventListener\("click"/);
+  assert.match(source, /[$]\("history-clear"\)[.]addEventListener\("click"/);
+  assert.match(source, /[$]\("viewer-search"\)[.]addEventListener\("keydown"/);
+});
+
+function liveSearchFixture(value) {
+  const f = fixture(value);
+  const panel = {
+    hidden: true, children: [],
+    replaceChildren(...nodes) { this.children = nodes; },
+    append(node) { this.children.push(node); },
+    querySelectorAll(selector) {
+      return this.children.filter(node =>
+        String(node.className || "").split(" ").includes(selector.slice(1))
+      );
+    }
+  };
+  const attrs = {};
+  const input = {
+    value, attrs,
+    setAttribute(name,v) { attrs[name] = v; },
+    removeAttribute(name) { delete attrs[name]; },
+    focus() {}
+  };
+  const clear = {hidden: true};
+  const historyClear = {hidden: true};
+  const historySearch = {value:""};
+  const elements = {
+    "viewer-source": f.select,
+    "viewer-search": input,
+    "viewer-clear": clear,
+    "viewer-suggestions": panel,
+    "history-clear": historyClear,
+    "history-search": historySearch
+  };
+  f.ctx.$ = id => elements[id];
+  f.ctx.document = {
+    createElement(tag) {
+      return {
+        tagName: tag, children: [], events: {}, textContent:"",
+        append(...nodes) { this.children.push(...nodes); },
+        addEventListener(name,callback) { this.events[name] = callback; },
+        setAttribute(name,value) { this[name] = value; }
+      };
+    },
+    createTextNode(text) { return {textContent:text}; }
+  };
+  const actions = {cleared:0, loaded:null};
+  f.ctx.renderer = {clear() {actions.cleared++;}};
+  f.ctx.loadPly = id => {actions.loaded=id;};
+  return {...f, input, clear, historyClear, historySearch, panel, actions};
+}
+
+test("each typed character narrows live suggestions without changing the model", () => {
+  const { ctx, input, panel, state, clear } = liveSearchFixture("p");
+  for(const [text,expected] of [["p",2],["pa",1],["pat",1],["patinho",1]]){
+    input.value=text;
+    vm.runInContext("refreshOptions(); renderViewerSuggestions()",ctx);
+    assert.equal(panel.querySelectorAll(".suggestion-option").length,expected);
+    assert.equal(state.selected,"scan_duck");
+    assert.equal(clear.hidden,false);
+    assert.equal(input.attrs["aria-expanded"],"true");
+  }
+});
+
+test("choosing a live result loads its PLY and closes suggestions", () => {
+  const {ctx,input,panel,state,actions} = liveSearchFixture("eng");
+  vm.runInContext("renderViewerSuggestions()",ctx);
+  const suggestions = panel.querySelectorAll(".suggestion-option");
+  assert.equal(suggestions.length,1);
+  suggestions[0].events.click();
+  assert.equal(state.selected,"scan_gear");
+  assert.equal(actions.loaded,"scan_gear");
+  assert.equal(panel.hidden,true);
+  assert.equal(input.attrs["aria-expanded"],"false");
+  assert.equal(input.value,"Engrenagem");
+});
+
+test("no matches shows a readable empty state and supports clearing", () => {
+  const {ctx,input,panel,clear,state} = liveSearchFixture("zzzz");
+  vm.runInContext("renderViewerSuggestions()",ctx);
+  assert.equal(panel.querySelectorAll(".suggestion-option").length,0);
+  assert.match(panel.children[0].textContent,/Nenhum escaneamento/);
+  input.value="";
+  vm.runInContext("refreshOptions(); renderViewerSuggestions()",ctx);
+  assert.equal(clear.hidden,true);
+  assert.equal(panel.hidden,true);
+  assert.equal(state.selected,"scan_duck");
+});
