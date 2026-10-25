@@ -24,6 +24,7 @@ jobs:
       - name: Validate dashboard assets
         run: |
           node --check web_interface/static/dashboard.js
+          node --test tests/test_dashboard_search.cjs
           python - <<'PY'
           from pathlib import Path
           html = Path("web_interface/templates/index.html").read_text()
