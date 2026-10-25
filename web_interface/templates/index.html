@@ -62,9 +62,9 @@
         </div>
         <div class="panel viewer-panel">
           <div class="panel-heading viewer-heading"><h2>⬡ Visualizador 3D</h2><div class="viewer-tools">
+            <label class="search-field viewer-search-field"><span aria-hidden="true">⌕</span><input id="viewer-search" type="search" placeholder="Buscar escaneamento..." aria-label="Buscar escaneamentos disponíveis no visualizador" autocomplete="off"></label>
             <label class="select-wrap">Exibir <select id="viewer-source" aria-label="Arquivo PLY para visualizar"><option value="current">Escaneamento atual</option></select></label>
             <label class="select-wrap">Cores <select id="viewer-color" aria-label="Modo de cores"><option value="rgb">RGB</option><option value="mono">Monocromático</option></select></label>
-            <button class="btn subtle" id="viewer-reset" type="button">Redefinir vista</button>
             <a class="btn primary" id="viewer-download" href="#" aria-disabled="true">↓ Baixar PLY</a>
           </div></div>
           <div class="viewer-grid">
@@ -76,7 +76,7 @@
 
       <section class="view" id="view-history" aria-labelledby="history-title">
         <div class="page-heading"><div><span class="eyebrow">ARQUIVOS</span><h1 id="history-title">Histórico de escaneamentos</h1><p>Visualize, renomeie, baixe ou exclua sessões anteriores.</p></div><button class="btn subtle" type="button" id="history-refresh">↻ Atualizar</button></div>
-        <div class="panel"><div class="panel-heading"><h2>Escaneamentos salvos</h2><span class="small-pill" id="history-count">—</span></div><div id="history-list" class="session-list"><p class="helper">Carregando histórico...</p></div></div>
+        <div class="panel"><div class="panel-heading history-heading"><h2>Escaneamentos salvos</h2><div class="history-tools"><label class="search-field history-search-field"><span aria-hidden="true">⌕</span><input id="history-search" type="search" placeholder="Pesquisar por nome ou data..." aria-label="Pesquisar escaneamentos no histórico" autocomplete="off"></label><span class="small-pill" id="history-count">—</span></div></div><div id="history-list" class="session-list"><p class="helper">Carregando histórico...</p></div></div>
       </section>
 
       <section class="view" id="view-calibration" aria-labelledby="calibration-title">
