@@ -261,12 +261,123 @@
     select.value=current;
     state.selected=current;
   }
+  let activeSuggestion = -1;
+  function closeViewerSuggestions(){
+    const panel=$("viewer-suggestions");
+    panel.hidden=true;
+    panel.replaceChildren();
+    activeSuggestion=-1;
+    $("viewer-search").setAttribute("aria-expanded","false");
+    $("viewer-search").removeAttribute("aria-activedescendant");
+  }
+  function updateSearchClearButtons(){
+    $("viewer-clear").hidden=!$("viewer-search").value;
+    $("history-clear").hidden=!$("history-search").value;
+  }
+  function viewerMatches(){
+    const query=normalizeSearch($("viewer-search").value);
+    if(!query)return [];
+    return state.sessions.filter(session=>session.ply_available)
+      .map(session=>{
+        if(!matchesSession(session,query))return null;
+        const name=normalizeSearch(displayName(session));
+        let relevance=3;
+        if(name.startsWith(query))relevance=0;
+        else if(name.split(/\s+/).some(word=>word.startsWith(query)))relevance=1;
+        else if(name.includes(query))relevance=2;
+        return {session,relevance};
+      }).filter(Boolean)
+      .sort((a,b)=>a.relevance-b.relevance)
+      .map(item=>item.session);
+  }
+  function chooseViewerSuggestion(session){
+    // The selected scan changes only when an actual suggestion is chosen.
+    // Typing and clearing the search never interrupts the current model.
+    $("viewer-search").value=displayName(session);
+    state.selected=session.session_id;
+    refreshOptions();
+    $("viewer-source").value=session.session_id;
+    updateSearchClearButtons();
+    closeViewerSuggestions();
+    $("viewer-search").focus();
+    if(state.loadedId!==session.session_id){
+      state.loadedId=null;
+      renderer.clear();
+    }
+    loadPly(session.session_id);
+  }
+  function renderViewerSuggestions(){
+    updateSearchClearButtons();
+    const query=normalizeSearch($("viewer-search").value);
+    const panel=$("viewer-suggestions");
+    panel.replaceChildren();
+    activeSuggestion=-1;
+    if(!query){
+      closeViewerSuggestions();
+      return;
+    }
+    const results=viewerMatches();
+    if(!results.length){
+      const message=document.createElement("div");
+      message.className="suggestion-empty";
+      message.textContent="Nenhum escaneamento encontrado";
+      panel.append(message);
+    }
+    for(const [index,session] of results.slice(0,7).entries()){
+      const option=document.createElement("button");
+      option.type="button";
+      option.className="suggestion-option";
+      option.id="viewer-suggestion-"+index;
+      option.setAttribute("role","option");
+      option.setAttribute("aria-selected",String(state.selected===session.session_id));
+      const main=document.createElement("span");
+      main.className="suggestion-name";
+      const name=displayName(session);
+      const start=normalizeSearch(name).indexOf(query);
+      if(start>=0 && start+query.length<=name.length){
+        main.append(document.createTextNode(name.slice(0,start)));
+        const highlight=document.createElement("mark");
+        highlight.textContent=name.slice(start,start+query.length);
+        main.append(highlight,document.createTextNode(name.slice(start+query.length)));
+      }else{
+        main.textContent=name;
+      }
+      const date=document.createElement("span");
+      date.className="suggestion-date";
+      date.textContent=displayDate(session);
+      option.append(main,date);
+      option.addEventListener("click",()=>chooseViewerSuggestion(session));
+      panel.append(option);
+    }
+    if(results.length>7){
+      const more=document.createElement("div");
+      more.className="suggestion-footer";
+      more.textContent="+ "+(results.length-7)+" outros resultados. Refine a pesquisa.";
+      panel.append(more);
+    }
+    panel.hidden=false;
+    $("viewer-search").setAttribute("aria-expanded","true");
+  }
+  function navigateViewerSuggestions(direction){
+    const options=[...$("viewer-suggestions").querySelectorAll(".suggestion-option")];
+    if(!options.length)return;
+    activeSuggestion=(activeSuggestion+direction+options.length)%options.length;
+    options.forEach((option,index)=>{
+      option.classList.toggle("is-active",index===activeSuggestion);
+    });
+    $("viewer-search").setAttribute(
+      "aria-activedescendant", options[activeSuggestion].id
+    );
+    options[activeSuggestion].scrollIntoView({block:"nearest"});
+  }
+
   async function refreshHistory(){
     try{
       const data=await api("/api/sessions");
       state.sessions=data.sessions||[];
       renderHistory();
       refreshOptions();
+      if(!$("viewer-suggestions").hidden)renderViewerSuggestions();
       if(state.tab==="scan")loadCurrentIfReady();
     }catch(error){if(state.tab==="history")notice(error.message,"error");}
   }
@@ -471,11 +582,54 @@
     });
     $("scan-stop").addEventListener("click",async()=>{try{await post("/stop-scan");notice("Parada solicitada.");}catch(e){notice(e.message,"error");}});
     $("history-refresh").addEventListener("click",refreshHistory);
-    $("viewer-search").addEventListener("input",refreshOptions);
-    $("history-search").addEventListener("input",renderHistory);
+    $("viewer-search").addEventListener("input",()=>{
+      refreshOptions();
+      renderViewerSuggestions();
+    });
+    $("viewer-search").addEventListener("focus",()=>{
+      if($("viewer-search").value.trim())renderViewerSuggestions();
+    });
+    $("viewer-search").addEventListener("keydown",event=>{
+      if(event.key==="Escape"){
+        closeViewerSuggestions();
+        return;
+      }
+      if(event.key==="ArrowDown" || event.key==="ArrowUp"){
+        event.preventDefault();
+        if($("viewer-suggestions").hidden)renderViewerSuggestions();
+        navigateViewerSuggestions(event.key==="ArrowDown"?1:-1);
+      }else if(event.key==="Enter" && !$("viewer-suggestions").hidden){
+        event.preventDefault();
+        const matches=viewerMatches();
+        if(matches.length)chooseViewerSuggestion(matches[activeSuggestion>=0?activeSuggestion:0]);
+      }
+    });
+    $("viewer-clear").addEventListener("click",()=>{
+      $("viewer-search").value="";
+      refreshOptions();
+      closeViewerSuggestions();
+      updateSearchClearButtons();
+      $("viewer-search").focus();
+    });
+    $("history-search").addEventListener("input",()=>{
+      renderHistory();
+      updateSearchClearButtons();
+    });
+    $("history-clear").addEventListener("click",()=>{
+      $("history-search").value="";
+      renderHistory();
+      updateSearchClearButtons();
+      $("history-search").focus();
+    });
+    document.addEventListener("pointerdown",event=>{
+      if(!$("viewer-search-box").contains(event.target))closeViewerSuggestions();
+    });
+    updateSearchClearButtons();
     $("viewer-source").addEventListener("change",()=>{
       state.selected=$("viewer-source").value;state.loadedId=null;
-      renderer.clear();loadCurrentIfReady();
+      renderer.clear();
+      closeViewerSuggestions();
+      loadCurrentIfReady();
     });
     $("viewer-color").addEventListener("change",()=>renderer.setMode($("viewer-color").value));
     $("viewer-download").addEventListener("click",event=>{if($("viewer-download").getAttribute("aria-disabled")==="true")event.preventDefault();});
