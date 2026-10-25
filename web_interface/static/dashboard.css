@@ -132,3 +132,20 @@
   .viewer-tools .viewer-search-combo{width:100%;flex-basis:100%;order:-1}
   .viewer-search-combo .viewer-search-field{width:100%}
 }
+
+/* Both scan and history autocomplete menus share the same dimensions and
+   suggestion styles; this only scopes the placement inside the history panel. */
+.history-search-combo{position:relative;width:240px;min-width:180px;flex-shrink:0}
+.history-search-combo .history-search-field{display:flex;width:100%;height:38px}
+.history-highlight{animation:history-selection-glow 1.2s ease-out}
+@keyframes history-selection-glow{
+  0%{background:#eaf3ff;box-shadow:0 0 0 3px #2a7fed48}
+  100%{background:transparent;box-shadow:0 0 0 0 #2a7fed00}
+}
+@media(max-width:650px){
+  .history-tools .history-search-combo{width:100%;flex:1 1 100%;min-width:0}
+  .history-search-combo .history-search-field{width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  .history-highlight{animation:none;outline:2px solid #b1d6ff}
+}
