@@ -65,3 +65,32 @@
   .topbar-right .led{width:10px;height:10px}
   .sidebar{top:66px}
 }
+
+
+/* The viewer's empty message must disappear once a valid PLY is displayed.
+   Author CSS display:flex otherwise overrides the browser's [hidden] rule. */
+.viewer-placeholder[hidden]{display:none !important}
+
+/* Compact search inputs use the same visual language as the model selector. */
+.search-field{display:inline-flex;align-items:center;gap:8px;min-width:0;min-height:38px;border:1px solid var(--line);border-radius:8px;background:#f9fbfe;color:#7890a8;padding:0 11px;transition:border-color .15s,box-shadow .15s}
+.search-field:focus-within{border-color:#72aaff;box-shadow:0 0 0 3px #2a7fed1c}
+.search-field>span{font-size:21px;line-height:1;flex:none}
+.search-field input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--ink);font-size:12px;padding:8px 0}
+.search-field input:focus-visible{outline:none}
+.search-field input::placeholder{color:#8b9aab;opacity:1}
+.viewer-tools .viewer-search-field{width:180px}
+.history-heading{flex-wrap:wrap}
+.history-tools{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.history-search-field{width:min(310px,100%)}
+.viewer-tools .select-wrap select{max-width:218px}
+@media(max-width:1050px){
+  .viewer-heading{align-items:flex-start;flex-wrap:wrap}
+  .viewer-tools{justify-content:flex-start;width:100%}
+}
+@media(max-width:650px){
+  .viewer-tools .viewer-search-field{width:100%}
+  .viewer-tools .select-wrap{flex:1;min-width:125px}
+  .viewer-tools .select-wrap select{max-width:100%;width:100%}
+  .history-tools{width:100%}
+  .history-search-field{width:auto;flex:1}
+}
