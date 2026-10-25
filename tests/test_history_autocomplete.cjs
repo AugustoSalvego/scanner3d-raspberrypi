@@ -60,7 +60,12 @@ function fixture(initial) {
     state,document,$:key=>map[key],
     displayName:s=>s.display_name,
     displayDate:s=>s.created_at,
-    makeButton:(text)=>{const b=node("button");b.textContent=text;return b;}
+    makeButton:(text)=>{const b=node("button");b.textContent=text;return b;},
+    safeDownload:id=>"/api/sessions/"+id+"/ply?download=1",
+    updateSearchClearButtons:()=>{
+      viewerClear.hidden=!viewer.value;
+      historyClear.hidden=!history.value;
+    }
   };
   vm.createContext(ctx);
   const helpers=between("  function normalizeSearch(value)", "  function safeDownload(sessionId)");
@@ -84,7 +89,7 @@ test("history uses the same autocomplete DOM and suggestion styles as the PLY vi
 
 test("every typed character narrows history suggestions and list", () => {
   const {ctx,history,panel,count,state,list}=fixture("P");
-  for(const [query,suggestions] of [["P",3],["Pa",2],["Pati",1]]){
+  for(const [query,suggestions] of [["P",4],["Pa",2],["Pati",1]]){
     history.value=query;
     vm.runInContext("renderHistory(); renderHistorySuggestions()",ctx);
     assert.equal(panel.querySelectorAll(".suggestion-option").length,suggestions,query);
