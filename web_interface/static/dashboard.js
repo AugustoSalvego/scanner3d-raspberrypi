@@ -280,8 +280,13 @@
     if(!query)return [];
     return state.sessions.filter(session=>session.ply_available)
       .map(session=>{
-        if(!matchesSession(session,query))return null;
         const name=normalizeSearch(displayName(session));
+        const date=normalizeSearch(displayDate(session));
+        const id=normalizeSearch(session.session_id||"");
+        // Keep the model search focused on names and dates. Raw internal
+        // filenames can cause misleading matches for short user queries.
+        if(!name.includes(query) && !date.includes(query) &&
+           !(query.startsWith("scan_") && id.includes(query)))return null;
         let relevance=3;
         if(name.startsWith(query))relevance=0;
         else if(name.split(/\s+/).some(word=>word.startsWith(query)))relevance=1;
