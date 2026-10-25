@@ -83,7 +83,17 @@
 
       <section class="view" id="view-history" aria-labelledby="history-title">
         <div class="page-heading"><div><span class="eyebrow">ARQUIVOS</span><h1 id="history-title">Histórico de escaneamentos</h1><p>Visualize, renomeie, baixe ou exclua sessões anteriores.</p></div><button class="btn subtle" type="button" id="history-refresh">↻ Atualizar</button></div>
-        <div class="panel"><div class="panel-heading history-heading"><h2>Escaneamentos salvos</h2><div class="history-tools"><div class="search-field history-search-field"><span class="search-icon" aria-hidden="true">⌕</span><input id="history-search" type="search" placeholder="Pesquisar por nome ou data..." aria-label="Pesquisar escaneamentos no histórico" autocomplete="off"><button class="search-clear" id="history-clear" type="button" aria-label="Limpar pesquisa do histórico" title="Limpar pesquisa" hidden>×</button></div><span class="small-pill" id="history-count">—</span></div></div><div id="history-list" class="session-list"><p class="helper">Carregando histórico...</p></div></div>
+        <div class="panel"><div class="panel-heading history-heading"><h2>Escaneamentos salvos</h2><div class="history-tools">
+          <div class="search-combo history-search-combo" id="history-search-box">
+            <div class="search-field history-search-field">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="history-search" type="search" placeholder="Pesquisar escaneamento..." aria-label="Pesquisar escaneamentos no histórico" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false" aria-controls="history-suggestions">
+              <button class="search-clear" id="history-clear" type="button" aria-label="Limpar pesquisa do histórico" title="Limpar pesquisa" hidden>×</button>
+            </div>
+            <div class="search-suggestions" id="history-suggestions" role="listbox" aria-label="Escaneamentos encontrados no histórico" hidden></div>
+          </div>
+          <span class="small-pill" id="history-count">—</span>
+        </div></div><div id="history-list" class="session-list"><p class="helper">Carregando histórico...</p></div></div>
       </section>
 
       <section class="view" id="view-calibration" aria-labelledby="calibration-title">
