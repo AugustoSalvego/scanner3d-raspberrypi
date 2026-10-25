@@ -64,6 +64,7 @@
     // Avoid keeping two MJPEG streams open when only one camera panel is visible.
     $("camera-scan").src = tab === "scan" ? "/video" : "";
     $("camera-calibration").src = tab === "calibration" ? "/video" : "";
+    if (tab !== "scan") closeViewerSuggestions();
     if (tab === "history") refreshHistory();
     if (tab === "calibration") refreshCalibration();
     if (tab === "settings") refreshSettings();
@@ -299,7 +300,6 @@
     $("viewer-source").value=session.session_id;
     updateSearchClearButtons();
     closeViewerSuggestions();
-    $("viewer-search").focus();
     if(state.loadedId!==session.session_id){
       state.loadedId=null;
       renderer.clear();
@@ -361,7 +361,9 @@
   function navigateViewerSuggestions(direction){
     const options=[...$("viewer-suggestions").querySelectorAll(".suggestion-option")];
     if(!options.length)return;
-    activeSuggestion=(activeSuggestion+direction+options.length)%options.length;
+    activeSuggestion=activeSuggestion<0
+      ? (direction>0?0:options.length-1)
+      : (activeSuggestion+direction+options.length)%options.length;
     options.forEach((option,index)=>{
       option.classList.toggle("is-active",index===activeSuggestion);
     });
