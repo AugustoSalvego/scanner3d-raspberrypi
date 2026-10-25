@@ -65,6 +65,7 @@
     $("camera-scan").src = tab === "scan" ? "/video" : "";
     $("camera-calibration").src = tab === "calibration" ? "/video" : "";
     if (tab !== "scan") closeViewerSuggestions();
+    if (tab !== "history") closeHistorySuggestions();
     if (tab === "history") refreshHistory();
     if (tab === "calibration") refreshCalibration();
     if (tab === "settings") refreshSettings();
@@ -378,6 +379,108 @@
     options[activeSuggestion].scrollIntoView({block:"nearest"});
   }
 
+  let activeHistorySuggestion = -1;
+  function closeHistorySuggestions(){
+    const panel=$("history-suggestions");
+    panel.hidden=true;
+    panel.replaceChildren();
+    activeHistorySuggestion=-1;
+    $("history-search").setAttribute("aria-expanded","false");
+    $("history-search").removeAttribute("aria-activedescendant");
+  }
+  function historyMatches(){
+    const query=normalizeSearch($("history-search").value);
+    if(!query)return [];
+    return state.sessions.filter(session=>matchesSession(session,query))
+      .map(session=>{
+        const name=normalizeSearch(displayName(session));
+        let relevance=3;
+        if(name.startsWith(query))relevance=0;
+        else if(name.split(/\s+/).some(word=>word.startsWith(query)))relevance=1;
+        else if(name.includes(query))relevance=2;
+        return {session,relevance};
+      }).sort((a,b)=>a.relevance-b.relevance)
+      .map(item=>item.session);
+  }
+  function chooseHistorySuggestion(session){
+    $("history-search").value=displayName(session);
+    updateSearchClearButtons();
+    renderHistory();
+    closeHistorySuggestions();
+    const item=[...$("history-list").querySelectorAll(".session-item")]
+      .find(element=>element.dataset.sessionId===session.session_id);
+    if(item){
+      item.scrollIntoView({block:"nearest",behavior:"smooth"});
+      item.classList.remove("history-highlight");
+      // Allow the highlight animation to restart for a repeated selection.
+      void item.offsetWidth;
+      item.classList.add("history-highlight");
+    }
+  }
+  function renderHistorySuggestions(){
+    updateSearchClearButtons();
+    const query=normalizeSearch($("history-search").value);
+    const panel=$("history-suggestions");
+    panel.replaceChildren();
+    activeHistorySuggestion=-1;
+    if(!query){
+      closeHistorySuggestions();
+      return;
+    }
+    const results=historyMatches();
+    if(!results.length){
+      const message=document.createElement("div");
+      message.className="suggestion-empty";
+      message.textContent="Nenhum escaneamento encontrado";
+      panel.append(message);
+    }
+    for(const [index,session] of results.slice(0,7).entries()){
+      const option=document.createElement("button");
+      option.type="button";
+      option.className="suggestion-option";
+      option.id="history-suggestion-"+index;
+      option.setAttribute("role","option");
+      option.setAttribute("aria-selected","false");
+      const main=document.createElement("span");
+      main.className="suggestion-name";
+      const name=displayName(session);
+      const start=normalizeSearch(name).indexOf(query);
+      if(start>=0 && start+query.length<=name.length){
+        main.append(document.createTextNode(name.slice(0,start)));
+        const highlight=document.createElement("mark");
+        highlight.textContent=name.slice(start,start+query.length);
+        main.append(highlight,document.createTextNode(name.slice(start+query.length)));
+      }else main.textContent=name;
+      const date=document.createElement("span");
+      date.className="suggestion-date";
+      date.textContent=displayDate(session);
+      option.append(main,date);
+      option.addEventListener("click",()=>chooseHistorySuggestion(session));
+      panel.append(option);
+    }
+    if(results.length>7){
+      const more=document.createElement("div");
+      more.className="suggestion-footer";
+      more.textContent="+ "+(results.length-7)+" outros resultados. Refine a pesquisa.";
+      panel.append(more);
+    }
+    panel.hidden=false;
+    $("history-search").setAttribute("aria-expanded","true");
+  }
+  function navigateHistorySuggestions(direction){
+    const options=[...$("history-suggestions").querySelectorAll(".suggestion-option")];
+    if(!options.length)return;
+    activeHistorySuggestion=activeHistorySuggestion<0
+      ? (direction>0?0:options.length-1)
+      : (activeHistorySuggestion+direction+options.length)%options.length;
+    options.forEach((option,index)=>{
+      option.classList.toggle("is-active",index===activeHistorySuggestion);
+    });
+    $("history-search").setAttribute(
+      "aria-activedescendant",options[activeHistorySuggestion].id
+    );
+    options[activeHistorySuggestion].scrollIntoView({block:"nearest"});
+  }
   async function refreshHistory(){
     try{
       const data=await api("/api/sessions");
@@ -385,6 +488,7 @@
       renderHistory();
       refreshOptions();
       if(!$("viewer-suggestions").hidden)renderViewerSuggestions();
+      if(!$("history-suggestions").hidden)renderHistorySuggestions();
       if(state.tab==="scan")loadCurrentIfReady();
     }catch(error){if(state.tab==="history")notice(error.message,"error");}
   }
@@ -410,6 +514,7 @@
     }
     for(const s of visible){
       const item=document.createElement("article");item.className="session-item";
+      item.dataset.sessionId=s.session_id;
       const info=document.createElement("div");
       const title=document.createElement("div");title.className="session-title";title.textContent=displayName(s);
       const meta=document.createElement("div");meta.className="session-meta";
@@ -620,16 +725,36 @@
     });
     $("history-search").addEventListener("input",()=>{
       renderHistory();
-      updateSearchClearButtons();
+      renderHistorySuggestions();
+    });
+    $("history-search").addEventListener("focus",()=>{
+      if($("history-search").value.trim())renderHistorySuggestions();
+    });
+    $("history-search").addEventListener("keydown",event=>{
+      if(event.key==="Escape"){
+        closeHistorySuggestions();
+        return;
+      }
+      if(event.key==="ArrowDown" || event.key==="ArrowUp"){
+        event.preventDefault();
+        if($("history-suggestions").hidden)renderHistorySuggestions();
+        navigateHistorySuggestions(event.key==="ArrowDown"?1:-1);
+      }else if(event.key==="Enter" && !$("history-suggestions").hidden){
+        event.preventDefault();
+        const matches=historyMatches();
+        if(matches.length)chooseHistorySuggestion(matches[activeHistorySuggestion>=0?activeHistorySuggestion:0]);
+      }
     });
     $("history-clear").addEventListener("click",()=>{
       $("history-search").value="";
       renderHistory();
+      closeHistorySuggestions();
       updateSearchClearButtons();
       $("history-search").focus();
     });
     document.addEventListener("pointerdown",event=>{
       if(!$("viewer-search-box").contains(event.target))closeViewerSuggestions();
+      if(!$("history-search-box").contains(event.target))closeHistorySuggestions();
     });
     updateSearchClearButtons();
     $("viewer-source").addEventListener("change",()=>{
