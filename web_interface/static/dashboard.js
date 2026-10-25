@@ -36,6 +36,19 @@
   function displayName(s) {
     return s.display_name || (s.created_at_iso ? "Escaneamento " + displayDate(s) : s.session_id);
   }
+  function normalizeSearch(value) {
+    return String(value ?? "").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR").trim();
+  }
+  function matchesSession(session, query) {
+    if (!query) return true;
+    const fields = [
+      displayName(session), displayDate(session),
+      session.session_id || "", session.created_at || "",
+      ...(session.point_clouds || [])
+    ];
+    return normalizeSearch(fields.join(" ")).includes(query);
+  }
   function safeDownload(sessionId) {
     return "/api/sessions/" + encodeURIComponent(sessionId) + "/ply?download=1";
   }
@@ -225,20 +238,33 @@
   }
   function refreshOptions(){
     const select=$("viewer-source");
-    const previous=select.value||state.selected;
+    const query=normalizeSearch($("viewer-search").value);
+    const available=state.sessions.filter(session=>session.ply_available);
+    // Filtering the menu must never change or unload the displayed model.
+    const current=state.selected==="current" || available.some(s=>s.session_id===state.selected)
+      ? state.selected : "current";
     select.replaceChildren(new Option("Escaneamento atual","current"));
-    state.sessions.forEach(s=>{
-      if(s.ply_available)select.add(new Option(displayName(s),s.session_id));
+    let matches=0;
+    available.forEach(session=>{
+      const found=matchesSession(session,query);
+      if(found)matches++;
+      // Keep the active selection visible even when it doesn't match the search.
+      if(found||session.session_id===current){
+        select.add(new Option(displayName(session),session.session_id));
+      }
     });
-    if(previous==="current"||state.sessions.some(s=>s.session_id===previous&&s.ply_available))select.value=previous;
-    else select.value="current";
-    state.selected=select.value;
+    if(query && matches===0){
+      const empty=new Option("Nenhum escaneamento encontrado","");
+      empty.disabled=true;
+      select.add(empty);
+    }
+    select.value=current;
+    state.selected=current;
   }
   async function refreshHistory(){
     try{
       const data=await api("/api/sessions");
       state.sessions=data.sessions||[];
-      $("history-count").textContent=state.sessions.length+" sessões";
       renderHistory();
       refreshOptions();
       if(state.tab==="scan")loadCurrentIfReady();
@@ -251,8 +277,20 @@
   }
   function renderHistory(){
     const list=$("history-list");list.replaceChildren();
-    if(!state.sessions.length){const p=document.createElement("p");p.className="empty-message";p.textContent="Nenhum escaneamento salvo.";list.append(p);return;}
-    for(const s of state.sessions){
+    const query=normalizeSearch($("history-search").value);
+    const visible=state.sessions.filter(session=>matchesSession(session,query));
+    $("history-count").textContent=query
+      ? visible.length+" de "+state.sessions.length+" sessões"
+      : state.sessions.length+" sessões";
+    if(!visible.length){
+      const p=document.createElement("p");p.className="empty-message";
+      p.textContent=state.sessions.length
+        ? "Nenhum escaneamento corresponde à sua pesquisa."
+        : "Nenhum escaneamento salvo.";
+      list.append(p);
+      return;
+    }
+    for(const s of visible){
       const item=document.createElement("article");item.className="session-item";
       const info=document.createElement("div");
       const title=document.createElement("div");title.className="session-title";title.textContent=displayName(s);
@@ -261,8 +299,11 @@
       info.append(title,meta);item.append(info);
       const actions=document.createElement("div");actions.className="session-actions";
       actions.append(makeButton("Visualizar",()=>{
-        state.selected=s.session_id;switchTab("scan");refreshOptions();
-        $("viewer-source").value=s.session_id;loadPly(s.session_id);
+        state.selected=s.session_id;
+        $("viewer-search").value="";
+        refreshOptions();
+        switchTab("scan");
+        loadPly(s.session_id);
       },"subtle",!s.ply_available));
       const anchor=document.createElement("a");anchor.className="btn subtle";anchor.textContent="↓ Baixar PLY";anchor.href=s.ply_available?safeDownload(s.session_id):"#";
       if(!s.ply_available)anchor.setAttribute("aria-disabled","true");
@@ -275,7 +316,7 @@
       }));
       actions.append(makeButton("Excluir",async()=>{
         if(!confirm("Excluir este escaneamento, suas fotografias e o PLY associado? Esta ação não pode ser desfeita."))return;
-        try{await api("/api/sessions/"+encodeURIComponent(s.session_id),{method:"DELETE"});notice("Escaneamento excluído.","success");if(state.loadedId===s.session_id){state.loadedId=null;renderer.clear();}await refreshHistory();}
+        try{await api("/api/sessions/"+encodeURIComponent(s.session_id),{method:"DELETE"});notice("Escaneamento excluído.","success");if(state.selected===s.session_id)state.selected="current";if(state.loadedId===s.session_id){state.loadedId=null;renderer.clear();}await refreshHistory();}
         catch(error){notice(error.message,"error");}
       },"danger-outline"));
       item.append(actions);list.append(item);
@@ -430,12 +471,13 @@
     });
     $("scan-stop").addEventListener("click",async()=>{try{await post("/stop-scan");notice("Parada solicitada.");}catch(e){notice(e.message,"error");}});
     $("history-refresh").addEventListener("click",refreshHistory);
+    $("viewer-search").addEventListener("input",refreshOptions);
+    $("history-search").addEventListener("input",renderHistory);
     $("viewer-source").addEventListener("change",()=>{
       state.selected=$("viewer-source").value;state.loadedId=null;
       renderer.clear();loadCurrentIfReady();
     });
     $("viewer-color").addEventListener("change",()=>renderer.setMode($("viewer-color").value));
-    $("viewer-reset").addEventListener("click",()=>renderer.reset());
     $("viewer-download").addEventListener("click",event=>{if($("viewer-download").getAttribute("aria-disabled")==="true")event.preventDefault();});
     $("settings-angle").addEventListener("input",calculateAngle);
     $("settings-form").addEventListener("submit",async e=>{
